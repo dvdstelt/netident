@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+    <enum id="org.gnome.shell.extensions.netident.position">
+        <value value="0" nick="left"/>
+        <value value="1" nick="center"/>
+        <value value="2" nick="right"/>
+    </enum>
+    <schema path="/org/gnome/shell/extensions/netident/" id="org.gnome.shell.extensions.netident">
+        <key name="position-in-panel" enum="org.gnome.shell.extensions.netident.position">
+            <default>'right'</default>
+            <summary>Position in panel</summary>
+        </key>
+        <key type="i" name="position-in-panel-offset">
+            <default>0</default>
+            <summary>Position offset within the chosen panel box</summary>
+        </key>
+        <key type="i" name="refresh-interval">
+            <default>300</default>
+            <summary>External IP refresh interval in seconds</summary>
+            <range min="60" max="3600"/>
+        </key>
+        <key type="b" name="show-ip-in-panel">
+            <default>true</default>
+            <summary>Show external IP address in the top bar</summary>
+        </key>
+        <key type="b" name="show-flag-in-panel">
+            <default>true</default>
+            <summary>Show country flag in the top bar</summary>
+        </key>
+        <key type="b" name="show-vpn-icon-in-panel">
+            <default>true</default>
+            <summary>Show VPN status icon in the top bar</summary>
+        </key>
+        <key type="b" name="mask-ip">
+            <default>false</default>
+            <summary>Mask the external IP address</summary>
+        </key>
+    </schema>
+</schemalist>

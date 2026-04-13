@@ -1,0 +1,5 @@
+IP-Finder/
+*.zip
+_build/
+schemas/gschemas.compiled
+node_modules/

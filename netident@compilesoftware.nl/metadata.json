@@ -1,0 +1,11 @@
+{
+  "name": "NetIdent",
+  "description": "Network identity indicator showing external IP, VPN status, Tailscale, DNS, routing, and all active connections.",
+  "uuid": "netident@compilesoftware.nl",
+  "gettext-domain": "netident",
+  "settings-schema": "org.gnome.shell.extensions.netident",
+  "version": 1,
+  "version-name": "1.0",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/dvdstelt/netident"
+}
