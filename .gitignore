@@ -1,5 +1,5 @@
 IP-Finder/
 *.zip
 _build/
-schemas/gschemas.compiled
+gschemas.compiled
 node_modules/
