@@ -181,11 +181,11 @@ class NetIdentIndicator extends PanelMenu.Button {
                 this._vpnIcon.icon_name = 'changes-prevent-symbolic';
                 this._vpnIcon.style_class = 'system-status-icon netident-vpn-on';
             } else if (this._tailscaleActive) {
-                // Tailscale active (no VPN): tailscale icon, green
+                // Tailscale active (no VPN): tailscale icon, native colors
                 this._vpnIcon.icon_name = '';
                 this._vpnIcon.gicon = Gio.icon_new_for_string(
                     `${this._extension.path}/icons/tailscale-symbolic.svg`);
-                this._vpnIcon.style_class = 'system-status-icon netident-vpn-on';
+                this._vpnIcon.style_class = 'system-status-icon';
             } else {
                 // Unprotected: unlock icon, red
                 this._vpnIcon.gicon = null;
