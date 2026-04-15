@@ -43,14 +43,13 @@ test: install enable
 	@echo "Installed and enabled. Log out and back in to reload, then run:"
 	@echo "  make logs"
 
-zip: schemas
+zip:
 	@rm -rf _build $(UUID).zip
 	@mkdir -p _build/schemas _build/icons
 	cp metadata.json _build/
 	cp src/*.js _build/
 	cp src/stylesheet.css _build/
 	cp schemas/*.xml _build/schemas/
-	cp schemas/gschemas.compiled _build/schemas/
 	test -d icons && cp -r icons/* _build/icons/ || true
 	cd _build && zip -qr ../$(UUID).zip .
 	@rm -rf _build
