@@ -31,6 +31,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._settings = extension.getSettings();
         this._ipData = null;
         this._vpnActive = false;
+        this._tailscaleActive = false;
         this._refreshTimerId = null;
 
         // Soup session for HTTP requests
@@ -113,6 +114,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._ipLabel.text = _('Offline');
         this._flagLabel.text = '';
         this._vpnActive = false;
+        this._tailscaleActive = false;
         this.menu.removeAll();
         this._addMenuItem(_('No connection'));
     }
@@ -151,10 +153,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._ipData = ipResult.data;
         if (this._ipData) {
             this._vpnActive = connInfo?.vpnActive || false;
-
-            // Tailscale with exit node also counts as VPN
-            if (tailscaleResult?.running && tailscaleResult?.exitNode)
-                this._vpnActive = true;
+            this._tailscaleActive = tailscaleResult?.running || false;
 
             this._flagLabel.text = getFlagEmoji(this._ipData.country || '');
             this._updatePanelElements();
@@ -176,11 +175,23 @@ class NetIdentIndicator extends PanelMenu.Button {
         }
 
         if (this._settings.get_boolean('show-vpn-icon-in-panel')) {
-            this._vpnIcon.icon_name = this._vpnActive
-                ? 'changes-prevent-symbolic' : 'changes-allow-symbolic';
-            this._vpnIcon.style_class = this._vpnActive
-                ? 'system-status-icon netident-vpn-on'
-                : 'system-status-icon netident-vpn-off';
+            if (this._vpnActive) {
+                // VPN active: lock icon, green (priority over Tailscale)
+                this._vpnIcon.gicon = null;
+                this._vpnIcon.icon_name = 'changes-prevent-symbolic';
+                this._vpnIcon.style_class = 'system-status-icon netident-vpn-on';
+            } else if (this._tailscaleActive) {
+                // Tailscale active (no VPN): tailscale icon, green
+                this._vpnIcon.icon_name = '';
+                this._vpnIcon.gicon = Gio.icon_new_for_string(
+                    `${this._extension.path}/icons/tailscale-symbolic.svg`);
+                this._vpnIcon.style_class = 'system-status-icon netident-vpn-on';
+            } else {
+                // Unprotected: unlock icon, red
+                this._vpnIcon.gicon = null;
+                this._vpnIcon.icon_name = 'changes-allow-symbolic';
+                this._vpnIcon.style_class = 'system-status-icon netident-vpn-off';
+            }
             this._panelBox.add_child(this._vpnIcon);
         }
 
