@@ -102,22 +102,29 @@ class NetIdentIndicator extends PanelMenu.Button {
     }
 
     _showLoading() {
-        this._statusIcon.icon_name = 'network-wired-acquiring-symbolic';
-        this._statusIcon.show();
+        this._showStatusIcon('network-wired-acquiring-symbolic');
         this._ipLabel.text = _('...');
         this.menu.removeAll();
         this._addMenuItem(_('Loading...'));
     }
 
     _showOffline() {
-        this._statusIcon.icon_name = 'network-offline-symbolic';
-        this._statusIcon.show();
+        this._showStatusIcon('network-offline-symbolic');
         this._ipLabel.text = _('Offline');
         this._flagLabel.text = '';
         this._vpnActive = false;
-        this._updatePanelElements();
         this.menu.removeAll();
         this._addMenuItem(_('No connection'));
+    }
+
+    _showStatusIcon(iconName) {
+        // Clear panel and show only the status icon
+        for (const child of [this._statusIcon, this._vpnIcon, this._ipLabel, this._flagLabel]) {
+            if (this._panelBox.contains(child))
+                this._panelBox.remove_child(child);
+        }
+        this._statusIcon.icon_name = iconName;
+        this._panelBox.add_child(this._statusIcon);
     }
 
     async _refresh() {
@@ -149,12 +156,10 @@ class NetIdentIndicator extends PanelMenu.Button {
             if (tailscaleResult?.running && tailscaleResult?.exitNode)
                 this._vpnActive = true;
 
-            this._statusIcon.hide();
             this._flagLabel.text = getFlagEmoji(this._ipData.country || '');
             this._updatePanelElements();
         } else {
-            this._statusIcon.icon_name = 'dialog-warning-symbolic';
-            this._statusIcon.show();
+            this._showStatusIcon('dialog-warning-symbolic');
             this._ipLabel.text = _('Error');
         }
 
@@ -164,8 +169,8 @@ class NetIdentIndicator extends PanelMenu.Button {
     }
 
     _updatePanelElements() {
-        // Remove all dynamic elements
-        for (const child of [this._vpnIcon, this._ipLabel, this._flagLabel]) {
+        // Remove all dynamic elements (including status icon)
+        for (const child of [this._statusIcon, this._vpnIcon, this._ipLabel, this._flagLabel]) {
             if (this._panelBox.contains(child))
                 this._panelBox.remove_child(child);
         }
@@ -428,6 +433,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._settings = null;
 
         // Manually destroy elements that may have been removed from parent
+        this._statusIcon.destroy();
         this._vpnIcon.destroy();
         this._ipLabel.destroy();
         this._flagLabel.destroy();
