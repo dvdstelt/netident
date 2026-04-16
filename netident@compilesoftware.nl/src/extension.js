@@ -129,12 +129,13 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._panelBox.add_child(this._statusIcon);
     }
 
-    async _refresh() {
+    async _refresh(silent = false) {
         if (this._refreshing)
             return;
         this._refreshing = true;
 
-        this._showLoading();
+        if (!silent)
+            this._showLoading();
         this._stopRefreshTimer();
 
         // Gather all data concurrently
@@ -417,7 +418,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._stopRefreshTimer();
         const interval = this._settings.get_int('refresh-interval');
         this._refreshTimerId = GLib.timeout_add_seconds(0, interval, () => {
-            this._refresh();
+            this._refresh(true);
             return GLib.SOURCE_REMOVE;
         });
     }
