@@ -4,8 +4,8 @@
   "uuid": "netident@compilesoftware.nl",
   "gettext-domain": "netident",
   "settings-schema": "org.gnome.shell.extensions.netident",
-  "version": 2,
-  "version-name": "1.0",
+  "version": 3,
+  "version-name": "3.0",
   "shell-version": ["45", "46", "47", "48", "49", "50"],
   "url": "https://github.com/dvdstelt/netident"
 }

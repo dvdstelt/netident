@@ -59,7 +59,8 @@ release:
 	@CURRENT=$$(grep '"version":' metadata.json | head -1 | sed 's/[^0-9]//g'); \
 	NEXT=$$((CURRENT + 1)); \
 	sed -i "s/\"version\": $$CURRENT/\"version\": $$NEXT/" metadata.json; \
-	echo "Bumped version $$CURRENT -> $$NEXT"; \
+	sed -i "s/\"version-name\": \"[^\"]*\"/\"version-name\": \"$$NEXT.0\"/" metadata.json; \
+	echo "Bumped version $$CURRENT -> $$NEXT ($$NEXT.0)"; \
 	$(MAKE) zip
 
 logs:
