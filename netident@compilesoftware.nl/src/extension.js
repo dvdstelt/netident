@@ -15,7 +15,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import {NetworkManagerClient, NetworkStatus} from './networkManager.js';
 import {fetchExternalIp, getFlagEmoji, maskIp} from './externalIp.js';
 import {gatherConnectionInfo} from './connectionInfo.js';
-import {getTailscaleStatus} from './tailscale.js';
+import {getTailscaleStatus, setTailscaleState} from './tailscale.js';
 import {getProxySettings} from './proxyInfo.js';
 
 class NetIdentIndicator extends PanelMenu.Button {
@@ -292,6 +292,13 @@ class NetIdentIndicator extends PanelMenu.Button {
         // --- Tailscale Section ---
         if (tailscaleInfo?.available) {
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(_('Tailscale')));
+
+            const tailscaleToggle = new PopupMenu.PopupSwitchMenuItem(
+                _('Enabled'), tailscaleInfo.running);
+            tailscaleToggle.connect('toggled',
+                (_item, state) => this._onTailscaleToggled(tailscaleToggle, state));
+            this.menu.addMenuItem(tailscaleToggle);
+
             this._addInfoRow(_('Status'), tailscaleInfo.backendState);
 
             if (tailscaleInfo.running) {
@@ -374,6 +381,20 @@ class NetIdentIndicator extends PanelMenu.Button {
             this.menu.toggle();
         });
         buttonsBox.add_child(settingsBtn);
+    }
+
+    async _onTailscaleToggled(toggle, up) {
+        toggle.setStatus(up ? _('starting...') : _('stopping...'));
+
+        const result = await setTailscaleState(up);
+
+        if (!result.success) {
+            Main.notify(_('NetIdent'),
+                up ? _('Could not start Tailscale') : _('Could not stop Tailscale'));
+            console.error(`NetIdent: tailscale ${up ? 'up' : 'down'} failed: ${result.error}`);
+        }
+
+        this._refresh(true);
     }
 
     _addMenuItem(text) {
