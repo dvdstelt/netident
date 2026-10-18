@@ -6,6 +6,6 @@
   "settings-schema": "org.gnome.shell.extensions.netident",
   "version": 3,
   "version-name": "3.0",
-  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "shell-version": ["45", "46", "47", "48", "49", "50","51"],
   "url": "https://github.com/dvdstelt/netident"
 }
