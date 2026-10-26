@@ -9,7 +9,12 @@
 #
 # The SemVer string lives in "version-name" in src/metadata.json. GNOME
 # extensions also need an integer "version" that grows by one on every
-# release, so a bump increments both.
+# release, so a bump increments both. extensions.gnome.org assigns its own
+# integer to every upload, rejected ones included, and GNOME Shell replaces a
+# local install whose integer matches a rejected upload with the published
+# build. Keep the local integer at the next number the site will assign.
+# Check the published number with:
+#   curl -s 'https://extensions.gnome.org/extension-info/?uuid=netident@compilesoftware.nl'
 
 set -euo pipefail
 
