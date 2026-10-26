@@ -13,18 +13,24 @@ netident@compilesoftware.nl/
   metadata.json           Extension metadata and GNOME version compatibility
   Makefile                Build, install, and package targets
   src/
-    extension.js          Main extension: panel indicator and popup menu
+    extension.js          Main extension: panel indicator and popup dashboard
     networkManager.js     NetworkManager client wrapper with connection state signals
-    connectionInfo.js     Queries NM for IPs, DNS, routes, DHCP/static per connection
+    connectionInfo.js     Queries NM for IPs, DNS, routes, DHCP/static and the primary device
     externalIp.js         External IP lookup via ipinfo.io, flag emoji, IP masking
-    tailscale.js          Tailscale status via subprocess (tailscale status --json)
+    traffic.js            Download/upload rates from /proc/net/dev with a 60 second history
+    probe.js              Latency, jitter and packet loss via ping
+    speedtest.js          Speed test via Ookla CLI, speedtest-cli or curl + Cloudflare
+    hostInfo.js           Device name via systemd-hostnamed
+    tailscale.js          Tailscale status and on/off via subprocess
     proxyInfo.js          System proxy detection via org.gnome.system.proxy GSettings
     prefs.js              Preferences UI using libadwaita
-    stylesheet.css        Extension styling
+    stylesheet-dark.css   Styling for the dark shell style (also installed as stylesheet.css)
+    stylesheet-light.css  Styling for the light shell style (GNOME Shell 50+)
   schemas/
     org.gnome.shell.extensions.netident.gschema.xml
   icons/
-    netident-logo.svg
+    netident.png
+    tailscale-symbolic.svg
 ```
 
 ## Build and install
@@ -71,8 +77,14 @@ The extension gathers data from multiple sources concurrently:
 | DHCP vs static        | NM.ActiveConnection DHCP config presence         |
 | Tailscale             | `tailscale status --json` via Gio.Subprocess     |
 | Proxy                 | org.gnome.system.proxy GSettings                 |
+| Live traffic          | /proc/net/dev byte counters, sampled every second |
+| Latency, jitter, loss | `ping` to the probe host and the gateway, while the popup is open |
+| Speed test            | Ookla `speedtest`, `speedtest-cli`, or `curl` against speed.cloudflare.com |
+| Device name           | org.freedesktop.hostname1 (pretty or static hostname) |
 
-The `NetworkManagerClient` emits connection state signals. On state change to ACTIVE, the extension fetches external IP and Tailscale status concurrently (async), then gathers NM connection info and proxy settings synchronously, and rebuilds the popup menu.
+The `NetworkManagerClient` emits connection state signals. On state change to ACTIVE, the extension fetches the external IP, Tailscale status and device name concurrently (async), then gathers NM connection info and proxy settings synchronously, and updates the popup in place. The popup is built once; detail rows under the three expanders are rebuilt on every refresh.
+
+Stylesheets: GNOME Shell 50 loads `stylesheet-dark.css` or `stylesheet-light.css` depending on the system color scheme and swaps them live. Older shells only look for `stylesheet.css`, so `make install` and `make zip` copy the dark variant under that name too.
 
 ## Publishing to extensions.gnome.org
 
