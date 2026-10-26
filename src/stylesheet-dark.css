@@ -230,3 +230,136 @@
     color: rgba(255, 255, 255, 0.6);
     padding: 4px 12px 2px 12px;
 }
+
+/* Alert state in the panel */
+
+.netident-alert {
+    color: #ff7800;
+}
+
+/* Pages */
+
+.netident-back-row {
+    spacing: 8px;
+    padding: 2px 8px 6px 8px;
+}
+
+.netident-back-row StIcon {
+    icon-size: 16px;
+}
+
+.netident-nav-row {
+    spacing: 8px;
+}
+
+.netident-nav-row .netident-chevron {
+    icon-size: 16px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.netident-tag {
+    font-size: 0.75em;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.netident-tag-button:hover,
+.netident-tag-button:focus {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.netident-tag-active {
+    background-color: rgba(87, 227, 137, 0.25);
+    color: inherit;
+}
+
+.netident-mono {
+    font-family: monospace;
+    font-feature-settings: "tnum";
+}
+
+.netident-device-card {
+    background-color: rgba(255, 255, 255, 0.07);
+    border-radius: 14px;
+    padding: 10px 12px;
+    spacing: 12px;
+}
+
+.netident-device-card StIcon {
+    icon-size: 20px;
+}
+
+.netident-peer-row {
+    spacing: 12px;
+    padding: 8px 12px;
+}
+
+.netident-peer-row .netident-peer-icon {
+    icon-size: 18px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.netident-peer-row .netident-peer-name {
+    font-weight: bold;
+}
+
+.netident-peer-row .netident-peer-name-row {
+    spacing: 8px;
+}
+
+.netident-peer-row .netident-peer-detail {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.netident-peer-row .netident-peer-direct {
+    color: #57e389;
+}
+
+.netident-peer-row .netident-peer-latency {
+    font-size: 0.85em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.netident-warning-row StIcon {
+    icon-size: 16px;
+    color: #f8e45c;
+}
+
+.netident-warning-row .netident-warning-text {
+    color: #f8e45c;
+}
+
+.netident-link-button {
+    border-radius: 10px;
+    padding: 8px 14px;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.netident-link-button:hover,
+.netident-link-button:focus {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+.netident-link-button > StBoxLayout {
+    spacing: 8px;
+}
+
+.netident-link-button StIcon {
+    icon-size: 14px;
+}
+
+.netident-iface-button {
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.netident-iface-button:hover,
+.netident-iface-button:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+}

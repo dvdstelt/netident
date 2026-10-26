@@ -16,20 +16,31 @@ import {Extension, gettext as _, ngettext} from 'resource:///org/gnome/shell/ext
 import {NetworkManagerClient, NetworkStatus} from './networkManager.js';
 import {fetchExternalIp, getFlagEmoji, maskIp} from './externalIp.js';
 import {gatherConnectionInfo, getPrimaryDeviceInfo} from './connectionInfo.js';
-import {getTailscaleStatus, setTailscaleState} from './tailscale.js';
+import {
+    ADMIN_CONSOLE_URL, getTailscaleStatus, osName, pingPeer, relayName,
+    setAcceptRoutes, setExitNode, setTailscaleState,
+} from './tailscale.js';
 import {getProxySettings} from './proxyInfo.js';
-import {TrafficMonitor, formatBytes, formatRate, formatRatePair} from './traffic.js';
+import {TrafficMonitor, formatBytes, formatRate, formatRatePair, listInterfaces} from './traffic.js';
 import {pingHost} from './probe.js';
 import {runSpeedTest} from './speedtest.js';
 import {getDeviceName} from './hostInfo.js';
 
-const PROBE_INTERVAL_SECONDS = 15;
+const PROBE_INTERVAL_OPEN_SECONDS = 15;
+const PROBE_INTERVAL_CLOSED_SECONDS = 60;
 const PROBE_COUNT = 5;
 const GATEWAY_PROBE_COUNT = 3;
+const PEER_PROBE_INTERVAL_SECONDS = 20;
+const PACKET_LOSS_ALERT_PERCENT = 20;
 const FOOTER_MESSAGE_SECONDS = 3;
+const IP_HISTORY_LENGTH = 20;
+const IP_HISTORY_SHOWN = 5;
+const PAGE_ANIMATION_MS = 150;
+const PAGE_SLIDE_PX = 24;
 
 const DOWN_ARROW = '↓';
 const UP_ARROW = '↑';
+const DASH = '–';
 const DOT = ' · ';
 
 // St.BoxLayout gained `orientation` in GNOME 48 and deprecated `vertical`.
@@ -55,13 +66,22 @@ function label(text, styleClass, params = {}) {
     });
 }
 
+function icon(iconName, styleClass, params = {}) {
+    return new St.Icon({
+        icon_name: iconName,
+        style_class: styleClass,
+        y_align: Clutter.ActorAlign.CENTER,
+        ...params,
+    });
+}
+
 function spacer() {
     return new St.Widget({x_expand: true});
 }
 
 function formatMs(ms) {
     if (ms === null || ms === undefined || !Number.isFinite(ms))
-        return '–';
+        return DASH;
     if (ms < 1)
         return '<1';
     return `${Math.round(ms)}`;
@@ -82,11 +102,78 @@ function countryName(code) {
     }
 }
 
+/**
+ * @param {number} usec - a GLib.get_real_time() timestamp
+ * @returns {string}
+ */
+function relativeTime(usec) {
+    const seconds = Math.max(0, Math.round((GLib.get_real_time() - usec) / 1e6));
+    if (seconds < 10)
+        return _('just now');
+    if (seconds < 60)
+        return _('%d s ago').format(seconds);
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60)
+        return ngettext('%d minute ago', '%d minutes ago', minutes).format(minutes);
+    const hours = Math.round(minutes / 60);
+    if (hours < 48)
+        return ngettext('%d hour ago', '%d hours ago', hours).format(hours);
+    const days = Math.round(hours / 24);
+    return ngettext('%d day ago', '%d days ago', days).format(days);
+}
+
+function deviceIconName(os, name) {
+    const lower = `${name || ''}`.toLowerCase();
+    switch ((os || '').toLowerCase()) {
+    case 'android':
+    case 'ios':
+        return 'phone-symbolic';
+    case 'tvos':
+        return 'tv-symbolic';
+    case 'macos':
+    case 'windows':
+        return 'computer-symbolic';
+    default:
+        if (/nas|disk|storage/.test(lower))
+            return 'drive-harddisk-symbolic';
+        if (/laptop|book|xps|thinkpad/.test(lower))
+            return 'computer-symbolic';
+        return 'network-server-symbolic';
+    }
+}
+
 function lookupColor(themeNode, name, fallback) {
     const [found, color] = themeNode.lookup_color(name, false);
     if (!found)
         return fallback;
     return [color.red / 255, color.green / 255, color.blue / 255];
+}
+
+function openUri(uri) {
+    try {
+        Gio.AppInfo.launch_default_for_uri(uri, global.create_app_launch_context(0, -1));
+    } catch (e) {
+        console.error(`NetIdent: could not open ${uri}: ${e}`);
+    }
+}
+
+/**
+ * A menu row that runs a callback when activated and keeps the menu open,
+ * unlike PopupBaseMenuItem whose activation closes the whole menu.
+ */
+class ActionRow extends PopupMenu.PopupBaseMenuItem {
+    static {
+        GObject.registerClass(this);
+    }
+
+    constructor(callback, params = {}) {
+        super(params);
+        this._callback = callback;
+    }
+
+    activate(event) {
+        this._callback?.(event);
+    }
 }
 
 class NetIdentIndicator extends PanelMenu.Button {
@@ -106,14 +193,21 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._tailscale = null;
         this._deviceName = null;
         this._vpnActive = false;
+        this._vpnWasActive = null;
         this._tailscaleActive = false;
         this._panelShowsStatus = true;
+        this._alertActive = false;
         this._refreshTimerId = null;
         this._probeTimerId = null;
+        this._peerProbeTimerId = null;
         this._footerTimerId = null;
         this._probing = false;
+        this._peerProbing = false;
+        this._peerLatency = new Map();
         this._speedTesting = false;
         this._speedResultText = '';
+        this._currentPage = null;
+        this._animatingPage = false;
 
         const SESSION_TYPE = GLib.getenv('XDG_SESSION_TYPE') || 'unknown';
         const PACKAGE_VERSION = Config.PACKAGE_VERSION;
@@ -138,8 +232,10 @@ class NetIdentIndicator extends PanelMenu.Button {
             'changed::show-vpn-icon-in-panel', () => this._updatePanelElements(),
             'changed::show-traffic-in-panel', () => this._updatePanelElements(),
             'changed::mask-ip', () => this._updatePanelElements(),
+            'changed::alert-on-packet-loss', () => this._updateAlert(),
             'changed::refresh-interval', () => this._resetRefreshTimer(),
             'changed::probe-host', () => this._onProbeHostChanged(),
+            'changed::traffic-interface', () => this._applyTrafficInterface(),
             this);
 
         this.menu.connect('open-state-changed', (_menu, open) => {
@@ -160,40 +256,20 @@ class NetIdentIndicator extends PanelMenu.Button {
         });
         this.add_child(this._panelBox);
 
-        this._vpnIcon = new St.Icon({
-            icon_name: 'changes-allow-symbolic',
-            y_align: Clutter.ActorAlign.CENTER,
-            style_class: 'system-status-icon netident-vpn-off',
-        });
-
-        this._rateLabel = new St.Label({
-            text: '',
-            y_align: Clutter.ActorAlign.CENTER,
-            style_class: 'system-status-icon netident-panel-rate',
-        });
-
-        this._ipLabel = new St.Label({
-            text: '',
-            y_align: Clutter.ActorAlign.CENTER,
-            style_class: 'system-status-icon',
-        });
-
-        this._flagLabel = new St.Label({
-            text: '',
-            y_align: Clutter.ActorAlign.CENTER,
-            style_class: 'system-status-icon',
-        });
-
-        this._statusIcon = new St.Icon({
-            icon_name: 'network-wired-acquiring-symbolic',
-            y_align: Clutter.ActorAlign.CENTER,
-            style_class: 'system-status-icon',
-        });
+        this._vpnIcon = icon('changes-allow-symbolic', 'system-status-icon netident-vpn-off');
+        this._alertIcon = icon('dialog-warning-symbolic', 'system-status-icon netident-alert');
+        this._rateLabel = label('', 'system-status-icon netident-panel-rate');
+        this._ipLabel = label('', 'system-status-icon');
+        this._flagLabel = label('', 'system-status-icon');
+        this._statusIcon = icon('network-wired-acquiring-symbolic', 'system-status-icon');
         this._panelBox.add_child(this._statusIcon);
     }
 
     _panelChildren() {
-        return [this._statusIcon, this._vpnIcon, this._rateLabel, this._ipLabel, this._flagLabel];
+        return [
+            this._statusIcon, this._alertIcon, this._vpnIcon,
+            this._rateLabel, this._ipLabel, this._flagLabel,
+        ];
     }
 
     _clearPanel() {
@@ -216,6 +292,9 @@ class NetIdentIndicator extends PanelMenu.Button {
 
         this._clearPanel();
 
+        if (this._alertActive)
+            this._panelBox.add_child(this._alertIcon);
+
         if (this._settings.get_boolean('show-vpn-icon-in-panel')) {
             if (this._vpnActive) {
                 this._vpnIcon.gicon = null;
@@ -236,6 +315,9 @@ class NetIdentIndicator extends PanelMenu.Button {
 
         if (this._settings.get_boolean('show-traffic-in-panel')) {
             this._rateLabel.text = formatRatePair(this._traffic.rxRate, this._traffic.txRate);
+            this._rateLabel.style_class = this._alertActive
+                ? 'system-status-icon netident-panel-rate netident-alert'
+                : 'system-status-icon netident-panel-rate';
             this._panelBox.add_child(this._rateLabel);
         }
 
@@ -251,10 +333,30 @@ class NetIdentIndicator extends PanelMenu.Button {
         }
     }
 
+    _updateAlert() {
+        const wanted = this._settings.get_boolean('alert-on-packet-loss') && this._probeAlert;
+        if (wanted === this._alertActive)
+            return;
+        this._alertActive = wanted;
+        this._updatePanelElements();
+    }
+
     // --- Menu structure --------------------------------------------------
 
     _buildMenu() {
-        const box = this.menu.box;
+        this._mainPage = new PopupMenu.PopupMenuSection();
+        this._peersPage = new PopupMenu.PopupMenuSection();
+        this.menu.addMenuItem(this._mainPage);
+        this.menu.addMenuItem(this._peersPage);
+        this._peersPage.actor.hide();
+        this._currentPage = this._mainPage;
+
+        this._buildMainPage(this._mainPage);
+        this._buildPeersPage(this._peersPage);
+    }
+
+    _buildMainPage(page) {
+        const box = page.box;
 
         // Header: link type, device name, link speed, online badge
         const header = hbox({style_class: 'netident-section netident-header'});
@@ -291,7 +393,16 @@ class NetIdentIndicator extends PanelMenu.Button {
         const trafficHeading = hbox({style_class: 'netident-section'});
         trafficHeading.add_child(label(_('Live traffic').toUpperCase(), 'netident-section-label'));
         trafficHeading.add_child(spacer());
-        trafficHeading.add_child(label(_('Last 60 seconds'), 'netident-caption'));
+        this._ifaceButton = new St.Button({
+            style_class: 'netident-iface-button',
+            label: '',
+            reactive: true,
+            can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._ifaceButton.connect('clicked', () => this._cycleTrafficInterface());
+        trafficHeading.add_child(this._ifaceButton);
+        trafficHeading.add_child(label(`${DOT}${_('Last 60 seconds')}`, 'netident-caption'));
         box.add_child(trafficHeading);
 
         const cardWrap = new St.Bin({style_class: 'netident-section', x_expand: true});
@@ -337,66 +448,33 @@ class NetIdentIndicator extends PanelMenu.Button {
         probeRow.add_child(this._gatewayLabel);
         box.add_child(probeRow);
 
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        page.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Public IP
-        this._ipItem = new PopupMenu.PopupBaseMenuItem({style_class: 'netident-ip-row'});
-        const ipColumn = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
-        this._ipHeading = label(_('Public IP').toUpperCase(), 'netident-section-label');
-        this._ipValue = label('–', 'netident-ip');
-        this._ipDetail = label('', 'netident-caption');
-        ipColumn.add_child(this._ipHeading);
-        ipColumn.add_child(this._ipValue);
-        ipColumn.add_child(this._ipDetail);
-        this._ipItem.add_child(ipColumn);
-        this._ipItem.add_child(new St.Icon({
-            icon_name: 'edit-copy-symbolic',
-            style_class: 'popup-menu-icon',
-            y_align: Clutter.ActorAlign.CENTER,
-        }));
-        this._ipItem.connect('activate', () => this._copyPublicIp());
-        this.menu.addMenuItem(this._ipItem);
+        // Public and local IP
+        this._ipRow = this._buildIpRow(_('Public IP'), () => this._copyPublicIp());
+        page.addMenuItem(this._ipRow.item);
+        this._localIpRow = this._buildIpRow(_('Local IP'), () => this._copyLocalIp());
+        page.addMenuItem(this._localIpRow.item);
 
-        // Local IP
-        this._localIpItem = new PopupMenu.PopupBaseMenuItem({style_class: 'netident-ip-row'});
-        const localColumn = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
-        this._localIpHeading = label(_('Local IP').toUpperCase(), 'netident-section-label');
-        this._localIpValue = label('\u2013', 'netident-ip');
-        this._localIpDetail = label('', 'netident-caption');
-        localColumn.add_child(this._localIpHeading);
-        localColumn.add_child(this._localIpValue);
-        localColumn.add_child(this._localIpDetail);
-        this._localIpItem.add_child(localColumn);
-        this._localIpItem.add_child(new St.Icon({
-            icon_name: 'edit-copy-symbolic',
-            style_class: 'popup-menu-icon',
-            y_align: Clutter.ActorAlign.CENTER,
-        }));
-        this._localIpItem.connect('activate', () => this._copyLocalIp());
-        this.menu.addMenuItem(this._localIpItem);
-
-        // Expandable detail rows
+        // Expandable detail rows and the Tailscale page link
         this._routeItem = this._buildExpander(_('Internet route'));
-        this.menu.addMenuItem(this._routeItem);
+        page.addMenuItem(this._routeItem);
 
-        this._tailscaleItem = this._buildExpander(_('Tailscale'), true);
+        this._tailscaleItem = this._buildNavRow(_('Tailscale'), () => this._showPage(this._peersPage));
         this._tailscaleItem.icon.gicon = Gio.icon_new_for_string(
             `${this._extension.path}/icons/tailscale-symbolic.svg`);
-        this.menu.addMenuItem(this._tailscaleItem);
+        page.addMenuItem(this._tailscaleItem);
 
         this._connectionsItem = this._buildExpander(_('Connection details'));
-        this.menu.addMenuItem(this._connectionsItem);
+        page.addMenuItem(this._connectionsItem);
 
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        page.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // Buttons
         const buttons = hbox({style_class: 'netident-buttons'});
 
         const speedContent = hbox({y_align: Clutter.ActorAlign.CENTER});
-        speedContent.add_child(new St.Icon({
-            icon_name: 'power-profile-performance-symbolic',
-            y_align: Clutter.ActorAlign.CENTER,
-        }));
+        speedContent.add_child(icon('power-profile-performance-symbolic', null));
         this._speedLabel = label(_('Run speed test'), null);
         speedContent.add_child(this._speedLabel);
         this._speedButton = new St.Button({
@@ -426,6 +504,125 @@ class NetIdentIndicator extends PanelMenu.Button {
         box.add_child(this._footer);
     }
 
+    _buildPeersPage(page) {
+        const box = page.box;
+
+        const backRow = new ActionRow(() => this._showPage(this._mainPage), {
+            style_class: 'netident-back-row',
+        });
+        backRow.add_child(icon('go-previous-symbolic', null));
+        backRow.add_child(label(_('Network overview'), 'netident-dim'));
+        page.addMenuItem(backRow);
+
+        const header = hbox({style_class: 'netident-section netident-header'});
+        const titles = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        titles.add_child(label(_('Tailscale devices'), 'netident-title'));
+        this._peersSubtitle = label('', 'netident-dim');
+        titles.add_child(this._peersSubtitle);
+        header.add_child(titles);
+
+        const badge = hbox({style_class: 'netident-badge', y_align: Clutter.ActorAlign.CENTER});
+        this._peersDot = new St.Widget({
+            style_class: 'netident-dot',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._peersStatusLabel = label(_('Connected'), 'netident-dim');
+        badge.add_child(this._peersDot);
+        badge.add_child(this._peersStatusLabel);
+        header.add_child(badge);
+        box.add_child(header);
+
+        // This device
+        const cardWrap = new St.Bin({style_class: 'netident-section', x_expand: true});
+        const card = hbox({style_class: 'netident-device-card', x_expand: true});
+        cardWrap.child = card;
+        this._selfIcon = icon('computer-symbolic', null);
+        card.add_child(this._selfIcon);
+        const selfColumn = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        const selfNameRow = hbox({style_class: 'netident-peer-name-row'});
+        this._selfName = label('', 'netident-peer-name');
+        selfNameRow.add_child(this._selfName);
+        selfNameRow.add_child(label(_('This device'), 'netident-tag', {y_align: Clutter.ActorAlign.CENTER}));
+        selfColumn.add_child(selfNameRow);
+        this._selfIp = label('', 'netident-mono netident-dim');
+        selfColumn.add_child(this._selfIp);
+        this._selfDns = label('', 'netident-caption');
+        selfColumn.add_child(this._selfDns);
+        card.add_child(selfColumn);
+        const selfCopy = this._buildIconButton('edit-copy-symbolic', _('Copy Tailscale IP'));
+        selfCopy.connect('clicked', () => this._copyText(this._tailscale?.tailscaleIp, _('Tailscale IP copied to clipboard')));
+        card.add_child(selfCopy);
+        box.add_child(cardWrap);
+
+        this._tailscaleToggle = new PopupMenu.PopupSwitchMenuItem(_('Tailscale enabled'), false);
+        this._tailscaleToggle.connect('toggled',
+            (_item, state) => this._onTailscaleToggled(this._tailscaleToggle, state));
+        page.addMenuItem(this._tailscaleToggle);
+
+        // Online peers
+        const onlineHeading = hbox({style_class: 'netident-section'});
+        this._onlineHeading = label('', 'netident-section-label');
+        onlineHeading.add_child(this._onlineHeading);
+        box.add_child(onlineHeading);
+
+        this._onlineSection = new PopupMenu.PopupMenuSection();
+        page.addMenuItem(this._onlineSection);
+
+        this._offlineItem = this._buildExpander(_('Offline peers'));
+        page.addMenuItem(this._offlineItem);
+
+        this._routesWarning = new ActionRow(() => this._onAcceptRoutesClicked(), {
+            style_class: 'netident-warning-row netident-nav-row',
+        });
+        this._routesWarning.add_child(icon('dialog-warning-symbolic', null));
+        this._routesWarningLabel = label(_('Advertised subnet routes not accepted'), 'netident-warning-text', {x_expand: true});
+        this._routesWarning.add_child(this._routesWarningLabel);
+        this._routesWarning.add_child(icon('go-next-symbolic', 'netident-chevron'));
+        page.addMenuItem(this._routesWarning);
+
+        this._peersEmpty = new PopupMenu.PopupMenuItem(_('Tailscale is not running'), {reactive: false});
+        page.addMenuItem(this._peersEmpty);
+
+        page.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const buttons = hbox({style_class: 'netident-buttons'});
+        const adminContent = hbox({y_align: Clutter.ActorAlign.CENTER});
+        adminContent.add_child(label(_('Admin console'), null));
+        adminContent.add_child(icon('go-next-symbolic', null));
+        const adminButton = new St.Button({
+            style_class: 'netident-link-button',
+            child: adminContent,
+            reactive: true,
+            can_focus: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        adminButton.connect('clicked', () => {
+            openUri(ADMIN_CONSOLE_URL);
+            this.menu.close();
+        });
+        buttons.add_child(adminButton);
+        buttons.add_child(spacer());
+        this._peersUpdated = label('', 'netident-caption');
+        buttons.add_child(this._peersUpdated);
+        box.add_child(buttons);
+
+        box.add_child(label(_('Latency from tailscale ping'), 'netident-footer'));
+    }
+
+    _buildIpRow(heading, onActivate) {
+        const item = new ActionRow(onActivate, {style_class: 'netident-ip-row'});
+        const column = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        const headingLabel = label(heading.toUpperCase(), 'netident-section-label');
+        const value = label(DASH, 'netident-ip');
+        const detail = label('', 'netident-caption');
+        column.add_child(headingLabel);
+        column.add_child(value);
+        column.add_child(detail);
+        item.add_child(column);
+        item.add_child(icon('edit-copy-symbolic', 'popup-menu-icon'));
+        return {item, heading: headingLabel, value, detail};
+    }
+
     _buildStat(arrow, name) {
         const box = vbox({style_class: 'netident-stat', x_expand: true});
         const heading = hbox({style_class: 'netident-stat-label'});
@@ -447,7 +644,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         const box = vbox({style_class: 'netident-stat', x_expand: true});
         box.add_child(label(name, 'netident-caption'));
         const valueRow = hbox({style_class: 'netident-stat-value'});
-        const value = label('–', 'netident-metric-value', {y_align: Clutter.ActorAlign.END});
+        const value = label(DASH, 'netident-metric-value', {y_align: Clutter.ActorAlign.END});
         valueRow.add_child(value);
         valueRow.add_child(label(unitText, 'netident-unit', {y_align: Clutter.ActorAlign.END}));
         box.add_child(valueRow);
@@ -464,6 +661,19 @@ class NetIdentIndicator extends PanelMenu.Button {
         return item;
     }
 
+    _buildNavRow(text, onActivate) {
+        const item = new ActionRow(onActivate, {style_class: 'netident-nav-row'});
+        item.icon = icon('', 'popup-menu-icon');
+        item.add_child(item.icon);
+        item.label = label(text, null, {x_expand: true});
+        item.add_child(item.label);
+        item.label_actor = item.label;
+        item.status = label('', 'netident-status');
+        item.add_child(item.status);
+        item.add_child(icon('go-next-symbolic', 'netident-chevron'));
+        return item;
+    }
+
     _buildIconButton(iconName, accessibleName) {
         return new St.Button({
             style_class: 'netident-icon-button',
@@ -472,6 +682,55 @@ class NetIdentIndicator extends PanelMenu.Button {
             can_focus: true,
             accessible_name: accessibleName,
             y_align: Clutter.ActorAlign.CENTER,
+        });
+    }
+
+    // --- Pages -----------------------------------------------------------
+
+    _showPage(page, animate = true) {
+        if (page === this._currentPage || this._animatingPage)
+            return;
+
+        const from = this._currentPage;
+        this._currentPage = page;
+
+        if (page === this._peersPage)
+            this._startPeerProbes();
+        else
+            this._stopPeerProbes();
+
+        if (!animate || !St.Settings.get().enable_animations) {
+            from.actor.hide();
+            page.actor.show();
+            return;
+        }
+
+        this._animatingPage = true;
+        const direction = page === this._peersPage ? 1 : -1;
+
+        from.actor.ease({
+            opacity: 0,
+            translation_x: -direction * PAGE_SLIDE_PX,
+            duration: PAGE_ANIMATION_MS,
+            mode: Clutter.AnimationMode.EASE_IN_QUAD,
+            onComplete: () => {
+                from.actor.hide();
+                from.actor.translation_x = 0;
+                from.actor.opacity = 255;
+
+                page.actor.opacity = 0;
+                page.actor.translation_x = direction * PAGE_SLIDE_PX;
+                page.actor.show();
+                page.actor.ease({
+                    opacity: 255,
+                    translation_x: 0,
+                    duration: PAGE_ANIMATION_MS,
+                    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+                    onComplete: () => {
+                        this._animatingPage = false;
+                    },
+                });
+            },
         });
     }
 
@@ -501,6 +760,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._subtitleLabel.text = this._deviceName || '';
         this._setBadge('offline', _('Offline'));
         this._traffic.setInterface(null);
+        this._stopProbeTimer();
     }
 
     async _refresh(silent = false) {
@@ -531,7 +791,9 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._vpnActive = this._connInfo?.vpnActive || false;
         this._tailscaleActive = tailscaleResult?.running || false;
 
-        this._traffic.setInterface(this._device?.iface || null);
+        this._applyTrafficInterface();
+        this._trackPublicIp();
+        this._trackVpnState();
 
         if (this._ipData) {
             this._panelShowsStatus = false;
@@ -542,7 +804,48 @@ class NetIdentIndicator extends PanelMenu.Button {
 
         this._updateMenu(ipResult.error);
         this._startRefreshTimer();
+        if (!this._probeTimerId)
+            this._startProbeTimer();
         this._refreshing = false;
+    }
+
+    _trackPublicIp() {
+        const ip = this._ipData?.ip;
+        if (!ip)
+            return;
+
+        const last = this._settings.get_string('last-public-ip');
+        if (ip === last)
+            return;
+
+        const history = this._settings.get_strv('ip-history');
+        const country = this._ipData.country || '';
+        const org = (this._ipData.org || '').replace(/^AS\d+\s+/, '');
+        const entry = [Math.floor(GLib.get_real_time() / 1e6), ip, country, org].join('|');
+        this._settings.set_strv('ip-history', [entry, ...history].slice(0, IP_HISTORY_LENGTH));
+        this._settings.set_string('last-public-ip', ip);
+
+        if (last && this._settings.get_boolean('notify-ip-change')) {
+            const where = [org, countryName(country)].filter(Boolean).join(DOT);
+            Main.notify(_('Public IP changed'),
+                where ? `${last} → ${ip}\n${where}` : `${last} → ${ip}`);
+        }
+    }
+
+    _trackVpnState() {
+        const active = this._vpnActive;
+        const was = this._vpnWasActive;
+        this._vpnWasActive = active;
+
+        if (was === null || was === active)
+            return;
+        if (!this._settings.get_boolean('notify-vpn-change'))
+            return;
+
+        if (active)
+            Main.notify(_('VPN connected'), this._connInfo?.vpnName || '');
+        else
+            Main.notify(_('VPN disconnected'), _('Traffic now goes directly to the Internet'));
     }
 
     _updateMenu(ipError) {
@@ -584,42 +887,44 @@ class NetIdentIndicator extends PanelMenu.Button {
 
         this._probeLabel.text = _('Probe: %s').format(this._settings.get_string('probe-host'));
         if (!this._gatewayLabel.text)
-            this._gatewayLabel.text = _('Gateway –');
+            this._gatewayLabel.text = _('Gateway %s').format(DASH);
 
         // Public IP
         const ip = this._ipData?.ip;
         if (ip) {
             const family = ip.includes(':') ? 'IPv6' : 'IPv4';
-            this._ipHeading.text = _('Public %s').format(family).toUpperCase();
-            this._ipValue.text = ip;
+            this._ipRow.heading.text = _('Public %s').format(family).toUpperCase();
+            this._ipRow.value.text = ip;
             const org = this._ipData.org?.replace(/^AS\d+\s+/, '');
             const place = [this._ipData.city, countryName(this._ipData.country)]
                 .filter(Boolean).join(', ');
-            this._ipDetail.text = [org, place].filter(Boolean).join(DOT);
-            this._ipItem.setSensitive(true);
+            this._ipRow.detail.text = [org, place].filter(Boolean).join(DOT);
+            this._ipRow.item.setSensitive(true);
         } else {
-            this._ipHeading.text = _('Public IP').toUpperCase();
-            this._ipValue.text = _('Unavailable');
-            this._ipDetail.text = ipError || '';
-            this._ipItem.setSensitive(false);
+            this._ipRow.heading.text = _('Public IP').toUpperCase();
+            this._ipRow.value.text = _('Unavailable');
+            this._ipRow.detail.text = ipError || '';
+            this._ipRow.item.setSensitive(false);
         }
 
+        // Local IP
         const localIp = device?.localIp;
         if (localIp) {
             const family = localIp.includes(':') ? 'IPv6' : 'IPv4';
-            this._localIpHeading.text = _('Local %s').format(family).toUpperCase();
-            this._localIpValue.text = localIp;
-            this._localIpDetail.text = [device.iface, device.connectionId].filter(Boolean).join(DOT);
-            this._localIpItem.setSensitive(true);
+            this._localIpRow.heading.text = _('Local %s').format(family).toUpperCase();
+            this._localIpRow.value.text = localIp;
+            this._localIpRow.detail.text = [device.iface, device.connectionId].filter(Boolean).join(DOT);
+            this._localIpRow.item.setSensitive(true);
         } else {
-            this._localIpHeading.text = _('Local IP').toUpperCase();
-            this._localIpValue.text = _('Unavailable');
-            this._localIpDetail.text = '';
-            this._localIpItem.setSensitive(false);
+            this._localIpRow.heading.text = _('Local IP').toUpperCase();
+            this._localIpRow.value.text = _('Unavailable');
+            this._localIpRow.detail.text = '';
+            this._localIpRow.item.setSensitive(false);
         }
 
         this._updateRouteItem(connInfo, tailscale);
-        this._updateTailscaleItem(tailscale);
+        this._updateTailscaleRow(tailscale);
+        this._updatePeersPage(tailscale);
         this._updateConnectionsItem(connInfo);
         this._updateTrafficCard();
     }
@@ -688,47 +993,170 @@ class NetIdentIndicator extends PanelMenu.Button {
             if (proxy.autoConfigUrl)
                 this._addInfoRowTo(item.menu, _('PAC URL'), proxy.autoConfigUrl);
         }
+
+        // Previous public IPs
+        const history = this._settings.get_strv('ip-history').slice(1, IP_HISTORY_SHOWN + 1);
+        if (history.length > 0) {
+            item.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(_('Previous public IPs')));
+            for (const entry of history) {
+                const [time, previousIp, country] = entry.split('|');
+                const when = relativeTime(Number(time) * 1e6);
+                const flag = getFlagEmoji(country);
+                this._addInfoRowTo(item.menu, when, flag ? `${previousIp} ${flag}` : previousIp, previousIp);
+            }
+        }
     }
 
-    _updateTailscaleItem(tailscale) {
+    _updateTailscaleRow(tailscale) {
         const item = this._tailscaleItem;
-        item.menu.removeAll();
 
         if (!tailscale?.available) {
             item.status.text = _('Not installed');
-            this._addInfoRowTo(item.menu, _('Status'), tailscale?.error || _('Not available'));
-            return;
-        }
-
-        if (tailscale.running) {
+        } else if (tailscale.running) {
             const peers = ngettext('%d peer', '%d peers', tailscale.peerCount).format(tailscale.peerCount);
             item.status.text = `${_('Connected')}${DOT}${peers}`;
         } else {
             item.status.text = tailscale.backendState;
         }
+    }
 
-        const toggle = new PopupMenu.PopupSwitchMenuItem(_('Enabled'), tailscale.running);
-        toggle.connect('toggled', (_item, state) => this._onTailscaleToggled(toggle, state));
-        item.menu.addMenuItem(toggle);
+    _updatePeersPage(tailscale) {
+        this._onlineSection.removeAll();
+        this._offlineItem.menu.removeAll();
 
-        this._addInfoRowTo(item.menu, _('Status'), tailscale.backendState);
+        const running = tailscale?.available && tailscale.running;
+        this._tailscaleToggle.visible = !!tailscale?.available;
+        this._tailscaleToggle.setToggleState(!!running);
+        this._tailscaleToggle.setStatus(null);
+        this._peersEmpty.visible = !running;
+        this._peersEmpty.label.text = tailscale?.available
+            ? _('Tailscale is %s').format((tailscale.backendState || _('stopped')).toLowerCase())
+            : _('Tailscale is not installed');
+        this._offlineItem.visible = running;
+        this._routesWarning.visible = false;
 
-        if (!tailscale.running)
+        if (!running) {
+            this._peersSubtitle.text = '';
+            this._peersDot.style_class = 'netident-dot netident-dot-offline';
+            this._peersStatusLabel.text = tailscale?.available ? _('Stopped') : _('Unavailable');
+            this._selfName.text = this._deviceName || '';
+            this._selfIp.text = DASH;
+            this._selfDns.text = '';
+            this._onlineHeading.text = '';
+            this._peersUpdated.text = '';
             return;
+        }
 
-        if (tailscale.hostname)
-            this._addInfoRowTo(item.menu, _('Hostname'), tailscale.hostname);
-        if (tailscale.tailscaleIp)
-            this._addInfoRowTo(item.menu, _('Tailscale IP'), tailscale.tailscaleIp);
-        if (tailscale.dnsName)
-            this._addInfoRowTo(item.menu, _('DNS name'), tailscale.dnsName.replace(/\.$/, ''));
-        if (tailscale.currentTailnet)
-            this._addInfoRowTo(item.menu, _('Tailnet'), tailscale.currentTailnet);
-        if (tailscale.exitNode)
-            this._addInfoRowTo(item.menu, _('Exit node'), tailscale.exitNode.name || _('Active'));
-        if (tailscale.magicDnsSuffix)
-            this._addInfoRowTo(item.menu, _('MagicDNS'), tailscale.magicDnsSuffix);
-        this._addInfoRowTo(item.menu, _('Peers'), `${tailscale.peerCount}`);
+        const online = tailscale.peers.filter(p => p.online);
+        const offline = tailscale.peers.filter(p => !p.online);
+
+        this._peersDot.style_class = 'netident-dot netident-dot-online';
+        this._peersStatusLabel.text = _('Connected');
+        this._peersSubtitle.text = [
+            tailscale.currentTailnet,
+            _('%d of %d peers online').format(online.length, tailscale.peerCount),
+        ].filter(Boolean).join(DOT);
+
+        this._selfIcon.icon_name = deviceIconName(tailscale.os, tailscale.hostname);
+        this._selfName.text = tailscale.hostname || this._deviceName || '';
+        this._selfIp.text = tailscale.tailscaleIp || DASH;
+        this._selfDns.text = (tailscale.dnsName || '').replace(/\.$/, '');
+
+        this._onlineHeading.text = `${_('Online peers').toUpperCase()}${DOT}${online.length}`;
+        for (const peer of online)
+            this._onlineSection.addMenuItem(this._buildPeerRow(peer));
+        if (online.length === 0)
+            this._onlineSection.addMenuItem(new PopupMenu.PopupMenuItem(_('No peers online'), {reactive: false}));
+
+        this._offlineItem.label.text = `${_('Offline peers')} ${offline.length}`;
+        this._offlineItem.visible = offline.length > 0;
+        for (const peer of offline)
+            this._offlineItem.menu.addMenuItem(this._buildPeerRow(peer));
+
+        this._routesWarning.visible = tailscale.routesAccepted === false &&
+            tailscale.advertisedRoutes.length > 0;
+        this._routesWarningLabel.text = _('Advertised subnet routes not accepted');
+
+        this._peersUpdated.text = _('Updated %s').format(relativeTime(tailscale.fetchedAt));
+        this._applyPeerLatency();
+    }
+
+    _buildPeerRow(peer) {
+        const row = new ActionRow(() => this._copyText(peer.ip, _('%s copied to clipboard').format(peer.ip)), {
+            style_class: 'netident-peer-row',
+        });
+        row.peer = peer;
+        row.add_child(icon(deviceIconName(peer.os, peer.name), 'netident-peer-icon'));
+
+        const column = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        const nameRow = hbox({style_class: 'netident-peer-name-row'});
+        nameRow.add_child(label(peer.name, 'netident-peer-name'));
+        if (peer.exitNodeOption || peer.exitNode) {
+            const tag = new St.Button({
+                style_class: peer.exitNode
+                    ? 'netident-tag netident-tag-button netident-tag-active'
+                    : 'netident-tag netident-tag-button',
+                label: peer.exitNode ? _('Exit node in use') : _('Exit node available'),
+                reactive: true,
+                can_focus: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            tag.connect('clicked', () => this._onExitNodeClicked(peer, tag));
+            nameRow.add_child(tag);
+        }
+        column.add_child(nameRow);
+        column.add_child(label(peer.ip || DASH, 'netident-mono'));
+        row.detail = label(this._peerDetailText(peer), 'netident-peer-detail');
+        column.add_child(row.detail);
+        row.add_child(column);
+
+        row.latency = label(peer.online ? _('No recent probe') : '', 'netident-peer-latency');
+        row.add_child(row.latency);
+
+        const copy = this._buildIconButton('edit-copy-symbolic', _('Copy Tailscale IP'));
+        copy.connect('clicked', () => row.activate(null));
+        row.add_child(copy);
+        return row;
+    }
+
+    _peerDetailText(peer, probe = null) {
+        const os = osName(peer.os);
+
+        if (!peer.online) {
+            const seen = peer.lastSeen
+                ? _('Last seen %s').format(relativeTime(peer.lastSeen.to_unix() * 1e6))
+                : _('Offline');
+            return [seen, os].filter(Boolean).join(DOT);
+        }
+
+        let path;
+        if (probe?.ok)
+            path = probe.via === 'direct' ? _('Direct') : _('Relayed via %s').format(relayName(probe.relay));
+        else if (peer.direct)
+            path = _('Direct');
+        else if (peer.active && peer.relay)
+            path = _('Relayed via %s').format(relayName(peer.relay));
+        else
+            path = `${_('Online')}${DOT}${_('idle')}`;
+
+        return [path, os].filter(Boolean).join(DOT);
+    }
+
+    _applyPeerLatency() {
+        const rows = this._onlineSection._getMenuItems().filter(item => item.peer);
+        for (const row of rows) {
+            const probe = this._peerLatency.get(row.peer.ip);
+            row.detail.text = this._peerDetailText(row.peer, probe);
+            if (probe?.ok) {
+                row.latency.text = `${formatMs(probe.ms)} ms`;
+                if (probe.via === 'direct')
+                    row.detail.add_style_class_name('netident-peer-direct');
+                else
+                    row.detail.remove_style_class_name('netident-peer-direct');
+            } else {
+                row.latency.text = probe ? _('No reply') : _('No recent probe');
+            }
+        }
     }
 
     _updateConnectionsItem(connInfo) {
@@ -763,6 +1191,27 @@ class NetIdentIndicator extends PanelMenu.Button {
     }
 
     // --- Live traffic ----------------------------------------------------
+
+    _applyTrafficInterface() {
+        const chosen = this._settings.get_string('traffic-interface');
+        const iface = chosen || this._device?.iface || null;
+        this._traffic.setInterface(iface);
+
+        if (!iface)
+            this._ifaceButton.label = DASH;
+        else if (chosen)
+            this._ifaceButton.label = `${iface} ▾`;
+        else
+            this._ifaceButton.label = `${iface} (${_('auto')}) ▾`;
+    }
+
+    _cycleTrafficInterface() {
+        const options = ['', ...listInterfaces()];
+        const current = this._settings.get_string('traffic-interface');
+        const index = options.indexOf(current);
+        const next = options[(index + 1) % options.length];
+        this._settings.set_string('traffic-interface', next);
+    }
 
     _onTrafficUpdated() {
         if (!this._settings)
@@ -843,17 +1292,26 @@ class NetIdentIndicator extends PanelMenu.Button {
     _onMenuOpened() {
         this._updateTrafficCard();
         this._runProbes();
-        this._stopProbeTimer();
-        this._probeTimerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT,
-            PROBE_INTERVAL_SECONDS, () => {
-                this._runProbes();
-                return GLib.SOURCE_CONTINUE;
-            });
+        this._startProbeTimer();
+        if (this._currentPage === this._peersPage)
+            this._startPeerProbes();
     }
 
     _onMenuClosed() {
+        this._startProbeTimer();
+        this._stopPeerProbes();
+        if (this._currentPage !== this._mainPage)
+            this._showPage(this._mainPage, false);
+    }
+
+    _startProbeTimer() {
         this._stopProbeTimer();
-        this._probeCancellable?.cancel();
+        const interval = this.menu.isOpen
+            ? PROBE_INTERVAL_OPEN_SECONDS : PROBE_INTERVAL_CLOSED_SECONDS;
+        this._probeTimerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, interval, () => {
+            this._runProbes();
+            return GLib.SOURCE_CONTINUE;
+        });
     }
 
     _stopProbeTimer() {
@@ -865,23 +1323,26 @@ class NetIdentIndicator extends PanelMenu.Button {
 
     _onProbeHostChanged() {
         this._probeLabel.text = _('Probe: %s').format(this._settings.get_string('probe-host'));
-        if (this.menu.isOpen)
-            this._runProbes();
+        this._runProbes();
     }
 
     async _runProbes() {
-        if (this._probing)
+        if (this._probing || !this._device)
             return;
         this._probing = true;
 
         const host = this._settings.get_string('probe-host');
         const gateway = this._device?.gateway || null;
+        const count = this.menu.isOpen ? PROBE_COUNT : GATEWAY_PROBE_COUNT;
+        this._probeCancellable?.cancel();
         this._probeCancellable = new Gio.Cancellable();
         const cancellable = this._probeCancellable;
 
         const [internet, gw] = await Promise.all([
-            pingHost(host, PROBE_COUNT, cancellable),
-            gateway ? pingHost(gateway, GATEWAY_PROBE_COUNT, cancellable) : Promise.resolve(null),
+            pingHost(host, count, cancellable),
+            gateway && this.menu.isOpen
+                ? pingHost(gateway, GATEWAY_PROBE_COUNT, cancellable)
+                : Promise.resolve(null),
         ]);
 
         this._probing = false;
@@ -892,34 +1353,115 @@ class NetIdentIndicator extends PanelMenu.Button {
             this._latencyMetric.value.text = formatMs(internet.latency);
             this._jitterMetric.value.text = formatMs(internet.jitter);
             this._lossMetric.value.text = `${Math.round(internet.loss)}`;
+            this._probeAlert = internet.loss >= PACKET_LOSS_ALERT_PERCENT;
         } else {
-            this._latencyMetric.value.text = '–';
-            this._jitterMetric.value.text = '–';
-            this._lossMetric.value.text = '–';
+            this._latencyMetric.value.text = DASH;
+            this._jitterMetric.value.text = DASH;
+            this._lossMetric.value.text = DASH;
+            this._probeAlert = this._device?.connectivity === 'online';
         }
+        this._updateAlert();
 
         if (gw?.ok && gw.latency !== null)
             this._gatewayLabel.text = _('Gateway %s ms').format(formatMs(gw.latency));
-        else
-            this._gatewayLabel.text = _('Gateway –');
+        else if (gw)
+            this._gatewayLabel.text = _('Gateway %s').format(DASH);
+    }
+
+    _startPeerProbes() {
+        this._stopPeerProbes();
+        this._runPeerProbes();
+        this._peerProbeTimerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT,
+            PEER_PROBE_INTERVAL_SECONDS, () => {
+                this._runPeerProbes();
+                return GLib.SOURCE_CONTINUE;
+            });
+    }
+
+    _stopPeerProbes() {
+        if (this._peerProbeTimerId) {
+            GLib.source_remove(this._peerProbeTimerId);
+            this._peerProbeTimerId = null;
+        }
+        this._peerCancellable?.cancel();
+    }
+
+    async _runPeerProbes() {
+        if (this._peerProbing || !this._tailscale?.running)
+            return;
+        this._peerProbing = true;
+
+        this._peerCancellable = new Gio.Cancellable();
+        const cancellable = this._peerCancellable;
+        const online = this._tailscale.peers.filter(p => p.online && p.ip);
+
+        const results = await Promise.all(online.map(p => pingPeer(p.ip, cancellable)));
+
+        this._peerProbing = false;
+        if (!this._settings || cancellable.is_cancelled())
+            return;
+
+        online.forEach((peer, i) => this._peerLatency.set(peer.ip, results[i]));
+        this._applyPeerLatency();
+        if (this._tailscale)
+            this._peersUpdated.text = _('Updated %s').format(relativeTime(this._tailscale.fetchedAt));
     }
 
     // --- Actions ---------------------------------------------------------
 
-    _copyPublicIp() {
-        const ip = this._ipData?.ip;
-        if (!ip)
+    _copyText(text, message) {
+        if (!text)
             return;
-        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, ip);
-        this._showFooter(_('Public IP copied to clipboard'), FOOTER_MESSAGE_SECONDS);
+        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
+        this._showFooter(message, FOOTER_MESSAGE_SECONDS);
+    }
+
+    _copyPublicIp() {
+        this._copyText(this._ipData?.ip, _('Public IP copied to clipboard'));
     }
 
     _copyLocalIp() {
-        const ip = this._device?.localIp;
-        if (!ip)
+        this._copyText(this._device?.localIp, _('Local IP copied to clipboard'));
+    }
+
+    async _onExitNodeClicked(peer, tag) {
+        if (this._tailscaleBusy)
             return;
-        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, ip);
-        this._showFooter(_('Local IP copied to clipboard'), FOOTER_MESSAGE_SECONDS);
+        this._tailscaleBusy = true;
+        tag.label = peer.exitNode ? _('Stopping…') : _('Connecting…');
+
+        const result = await setExitNode(peer.exitNode ? null : peer.ip);
+
+        if (!this._settings)
+            return;
+        this._tailscaleBusy = false;
+
+        if (!result.success) {
+            Main.notify(_('NetIdent'), _('Could not change the exit node'));
+            console.error(`NetIdent: exit node change failed: ${result.error}`);
+        }
+
+        this._refresh(true);
+    }
+
+    async _onAcceptRoutesClicked() {
+        if (this._tailscaleBusy)
+            return;
+        this._tailscaleBusy = true;
+        this._routesWarningLabel.text = _('Accepting routes…');
+
+        const result = await setAcceptRoutes(true);
+
+        if (!this._settings)
+            return;
+        this._tailscaleBusy = false;
+
+        if (!result.success) {
+            Main.notify(_('NetIdent'), _('Could not accept subnet routes'));
+            console.error(`NetIdent: accept routes failed: ${result.error}`);
+        }
+
+        this._refresh(true);
     }
 
     async _onSpeedTestClicked() {
@@ -1005,19 +1547,11 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._refresh(true);
     }
 
-    _addInfoRowTo(menu, key, value) {
-        const item = new PopupMenu.PopupMenuItem('', {reactive: true});
-        item.remove_child(item.label);
-
+    _addInfoRowTo(menu, key, value, copyValue = value) {
+        const item = new ActionRow(() => this._copyText(copyValue, _('%s copied to clipboard').format(copyValue)));
         item.add_child(label(`${key}:`, 'netident-key'));
         item.label = label(value || '', 'netident-value', {x_expand: true});
         item.add_child(item.label);
-
-        item.connect('activate', () => {
-            if (value)
-                St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, value);
-        });
-
         menu.addMenuItem(item);
         return item;
     }
@@ -1049,6 +1583,7 @@ class NetIdentIndicator extends PanelMenu.Button {
     disable() {
         this._stopRefreshTimer();
         this._stopProbeTimer();
+        this._stopPeerProbes();
         this._stopFooterTimer();
         this._probeCancellable?.cancel();
         this._speedCancellable?.cancel();
