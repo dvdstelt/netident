@@ -9,7 +9,8 @@
 ## Project structure
 
 ```
-netident@compilesoftware.nl/
+build.sh                  Build the zip, optionally bump the version first
+src/
   metadata.json           Extension metadata and GNOME version compatibility
   Makefile                Build, install, and package targets
   src/
@@ -36,7 +37,7 @@ netident@compilesoftware.nl/
 ## Build and install
 
 ```bash
-cd netident@compilesoftware.nl
+cd src
 make install
 gnome-extensions enable netident@compilesoftware.nl
 ```
@@ -51,15 +52,15 @@ On Wayland, you must log out and back in for GNOME Shell to load new extension c
 | `make install` | Compile schemas and install to ~/.local/share/gnome-shell/extensions |
 | `make enable`  | Enable the extension                          |
 | `make disable` | Disable the extension                         |
-| `make zip`     | Build a zip for extensions.gnome.org upload   |
+| `make zip`     | Build a zip for extensions.gnome.org upload in the repository root |
 | `make logs`    | Show recent GNOME Shell logs for this extension |
 | `make uninstall` | Disable and remove the extension            |
 | `make info`    | Show extension status                         |
 
 ## Development workflow
 
-1. Edit files in `src/`
-2. Run `make install`
+1. Edit files in `src/src/`
+2. Run `make install` in `src/`
 3. Log out and back in
 4. Run `make logs` to check for errors
 
@@ -88,7 +89,9 @@ Stylesheets: GNOME Shell 50 loads `stylesheet-dark.css` or `stylesheet-light.css
 
 ## Publishing to extensions.gnome.org
 
-1. Bump `version` (integer) in `metadata.json`
-2. Run `make zip`
-3. Upload `netident@compilesoftware.nl.zip` at https://extensions.gnome.org
+1. Run `./build.sh major`, `./build.sh minor` or `./build.sh patch` from the repository root. This bumps `version-name` (SemVer) and `version` (integer, required by GNOME) in `src/metadata.json` and builds the zip.
+2. Commit the version change.
+3. Upload `netident@compilesoftware.nl.zip` from the repository root at https://extensions.gnome.org
 4. Wait for review (usually a few days)
+
+Run `./build.sh` without an argument to build the zip with the current version.

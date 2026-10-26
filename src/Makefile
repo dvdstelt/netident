@@ -1,4 +1,4 @@
-.PHONY: all clean install enable disable uninstall schemas test zip release
+.PHONY: all clean install enable disable uninstall schemas test zip
 
 UUID = netident@compilesoftware.nl
 INSTALLBASE = $(HOME)/.local/share/gnome-shell/extensions
@@ -45,7 +45,7 @@ test: install enable
 	@echo "  make logs"
 
 zip:
-	@rm -rf _build $(UUID).zip
+	@rm -rf _build ../$(UUID).zip
 	@mkdir -p _build/schemas _build/icons
 	cp metadata.json _build/
 	cp src/*.js _build/
@@ -53,17 +53,9 @@ zip:
 	cp src/stylesheet-dark.css _build/stylesheet.css
 	cp schemas/*.xml _build/schemas/
 	test -d icons && cp -r icons/* _build/icons/ || true
-	cd _build && zip -qr ../$(UUID).zip .
+	cd _build && zip -qr ../../$(UUID).zip .
 	@rm -rf _build
 	@echo "Created $(UUID).zip"
-
-release:
-	@CURRENT=$$(grep '"version":' metadata.json | head -1 | sed 's/[^0-9]//g'); \
-	NEXT=$$((CURRENT + 1)); \
-	sed -i "s/\"version\": $$CURRENT/\"version\": $$NEXT/" metadata.json; \
-	sed -i "s/\"version-name\": \"[^\"]*\"/\"version-name\": \"$$NEXT.0\"/" metadata.json; \
-	echo "Bumped version $$CURRENT -> $$NEXT ($$NEXT.0)"; \
-	$(MAKE) zip
 
 logs:
 	journalctl -b /usr/bin/gnome-shell --no-pager 2>/dev/null | grep -i "netident\|NetIdent" | tail -30 || echo "No netident logs found"
