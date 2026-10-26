@@ -2,7 +2,7 @@
 # Build the NetIdent extension zip, with an optional version bump.
 #
 # Usage:
-#   ./build.sh            Build the zip with the current version
+#   ./build.sh            Build dist/netident@compilesoftware.nl.zip with the current version
 #   ./build.sh patch      Bump the patch version (3.1.0 -> 3.1.1), then build
 #   ./build.sh minor      Bump the minor version (3.1.1 -> 3.2.0), then build
 #   ./build.sh major      Bump the major version (3.2.0 -> 4.0.0), then build
@@ -69,7 +69,7 @@ print(f'Version {old} -> {data["version-name"]} (GNOME version {data["version"]}
 EOF
 fi
 
-make -C src zip
+make zip
 
 VERSION_NAME=$(python3 -c "import json; print(json.load(open('$METADATA'))['version-name'])")
-echo "Built netident@compilesoftware.nl.zip for version $VERSION_NAME"
+echo "Built dist/netident@compilesoftware.nl.zip for version $VERSION_NAME"

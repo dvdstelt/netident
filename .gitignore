@@ -1,4 +1,3 @@
-*.zip
-_build/
+dist/
 gschemas.compiled
 node_modules/
