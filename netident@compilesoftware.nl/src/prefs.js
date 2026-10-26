@@ -26,6 +26,10 @@ export default class NetIdentPrefs extends ExtensionPreferences {
         generalPage.add(panelGroup);
 
         panelGroup.add(this._makeSwitchRow(
+            _('Show Live Traffic'), _('Display download and upload rates'),
+            settings, 'show-traffic-in-panel'));
+
+        panelGroup.add(this._makeSwitchRow(
             _('Show IP Address'), _('Display external IP in the top bar'),
             settings, 'show-ip-in-panel'));
 
@@ -34,7 +38,7 @@ export default class NetIdentPrefs extends ExtensionPreferences {
             settings, 'show-flag-in-panel'));
 
         panelGroup.add(this._makeSwitchRow(
-            _('Show VPN Icon'), _('Display VPN status icon'),
+            _('Show VPN Icon'), _('Display VPN or Tailscale status icon'),
             settings, 'show-vpn-icon-in-panel'));
 
         panelGroup.add(this._makeSwitchRow(
@@ -84,6 +88,17 @@ export default class NetIdentPrefs extends ExtensionPreferences {
             title: _('Refresh'),
         });
         generalPage.add(refreshGroup);
+
+        const probeRow = new Adw.EntryRow({
+            title: _('Latency Probe Host'),
+            text: settings.get_string('probe-host'),
+        });
+        probeRow.connect('changed', () => {
+            const host = probeRow.get_text().trim();
+            if (host)
+                settings.set_string('probe-host', host);
+        });
+        refreshGroup.add(probeRow);
 
         const refreshRow = new Adw.SpinRow({
             title: _('Refresh Interval'),

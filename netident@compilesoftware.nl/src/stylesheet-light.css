@@ -1,0 +1,232 @@
+/* NetIdent: light variant, loaded by GNOME Shell 50+ when the system style is light. Keep in sync with stylesheet-dark.css. */
+
+/* Panel */
+
+.netident-panel-rate {
+    font-feature-settings: "tnum";
+    min-width: 8em;
+    text-align: center;
+}
+
+.netident-vpn-on {
+    color: #26a269;
+}
+
+.netident-vpn-off {
+    color: #c01c28;
+}
+
+/* Popup */
+
+.netident-menu {
+    min-width: 26em;
+    padding: 8px;
+}
+
+.netident-section {
+    padding: 4px 12px;
+}
+
+.netident-header {
+    spacing: 12px;
+}
+
+.netident-header-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.netident-header-icon StIcon {
+    icon-size: 18px;
+}
+
+.netident-title {
+    font-size: 1.25em;
+    font-weight: bold;
+}
+
+.netident-dim {
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-caption {
+    font-size: 0.85em;
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-section-label {
+    font-size: 0.8em;
+    font-weight: bold;
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-badge {
+    spacing: 6px;
+}
+
+.netident-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background-color: #26a269;
+}
+
+.netident-dot-warning {
+    background-color: #e5a50a;
+}
+
+.netident-dot-offline {
+    background-color: #c01c28;
+}
+
+.netident-card {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 14px;
+    padding: 12px;
+    spacing: 8px;
+}
+
+.netident-card-row {
+    spacing: 16px;
+}
+
+.netident-stat {
+    spacing: 2px;
+}
+
+.netident-stat-label {
+    spacing: 4px;
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-stat-label StIcon {
+    icon-size: 14px;
+}
+
+.netident-stat-value {
+    spacing: 4px;
+}
+
+.netident-big-number {
+    font-size: 1.8em;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+
+.netident-unit {
+    font-size: 0.85em;
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-graph {
+    height: 64px;
+    -netident-download-color: #1c71d8;
+    -netident-upload-color: #813d9c;
+}
+
+.netident-totals {
+    spacing: 8px;
+    font-size: 0.85em;
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-metrics {
+    spacing: 24px;
+    padding: 6px 12px 0 12px;
+}
+
+.netident-metric-value {
+    font-size: 1.3em;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+
+.netident-ip {
+    font-size: 1.3em;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+
+.netident-ip-row {
+    spacing: 12px;
+}
+
+.netident-status {
+    color: rgba(34, 34, 38, 0.6);
+}
+
+.netident-key {
+    color: rgba(34, 34, 38, 0.6);
+    min-width: 7em;
+}
+
+.netident-value {
+    font-feature-settings: "tnum";
+}
+
+.netident-dns-ok {
+    color: #26a269;
+}
+
+.netident-dns-leak {
+    color: #c01c28;
+}
+
+.netident-buttons {
+    spacing: 8px;
+    padding: 4px 6px 0 6px;
+}
+
+.netident-pill-button {
+    border-radius: 999px;
+    padding: 8px 16px;
+    background-color: rgba(0, 0, 0, 0.07);
+}
+
+.netident-pill-button:hover,
+.netident-pill-button:focus {
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.netident-pill-button:active {
+    background-color: rgba(0, 0, 0, 0.17);
+}
+
+.netident-pill-button:insensitive {
+    color: rgba(34, 34, 38, 0.5);
+}
+
+.netident-pill-button > StBoxLayout {
+    spacing: 8px;
+}
+
+.netident-pill-button StIcon {
+    icon-size: 16px;
+}
+
+.netident-icon-button {
+    border-radius: 999px;
+    padding: 10px;
+    background-color: transparent;
+}
+
+.netident-icon-button:hover,
+.netident-icon-button:focus {
+    background-color: rgba(0, 0, 0, 0.07);
+}
+
+.netident-icon-button:active {
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.netident-icon-button StIcon {
+    icon-size: 16px;
+}
+
+.netident-footer {
+    font-size: 0.85em;
+    color: rgba(34, 34, 38, 0.6);
+    padding: 4px 12px 2px 12px;
+}

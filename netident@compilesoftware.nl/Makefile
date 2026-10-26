@@ -19,7 +19,8 @@ install: schemas
 	mkdir -p $(INSTALLBASE)/$(UUID)/icons
 	cp metadata.json $(INSTALLBASE)/$(UUID)/
 	cp src/*.js $(INSTALLBASE)/$(UUID)/
-	cp src/stylesheet.css $(INSTALLBASE)/$(UUID)/
+	cp src/stylesheet-dark.css src/stylesheet-light.css $(INSTALLBASE)/$(UUID)/
+	cp src/stylesheet-dark.css $(INSTALLBASE)/$(UUID)/stylesheet.css
 	cp schemas/*.xml $(INSTALLBASE)/$(UUID)/schemas/
 	cp schemas/gschemas.compiled $(INSTALLBASE)/$(UUID)/schemas/
 	test -d icons && cp -r icons/* $(INSTALLBASE)/$(UUID)/icons/ || true
@@ -48,7 +49,8 @@ zip:
 	@mkdir -p _build/schemas _build/icons
 	cp metadata.json _build/
 	cp src/*.js _build/
-	cp src/stylesheet.css _build/
+	cp src/stylesheet-dark.css src/stylesheet-light.css _build/
+	cp src/stylesheet-dark.css _build/stylesheet.css
 	cp schemas/*.xml _build/schemas/
 	test -d icons && cp -r icons/* _build/icons/ || true
 	cd _build && zip -qr ../$(UUID).zip .
