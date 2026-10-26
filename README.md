@@ -17,7 +17,10 @@ A GNOME Shell extension that shows your external IP address and network identity
 - Public IP with ISP and location, click to copy
 - Local IP of the active interface, click to copy
 - Internet route: VPN status, routing mode, gateway, DNS servers and leak detection, system proxy
-- Tailscale: on/off toggle, hostname, Tailscale IP, DNS name, tailnet, exit node, MagicDNS, peers
+- Tailscale devices page: on/off toggle, this device, online peers with latency and connection path, offline peers, exit node switch, subnet route warning, admin console link
+- Notifications when the public IP or VPN state changes, with a history of previous public IPs
+- Top bar alert when the latency probe loses packets
+- Interface picker for the traffic graph
 - Connection details: every active connection with IPv4/IPv6, DNS, DHCP/static
 - Speed test button
 - Copy any value in the detail rows to the clipboard by clicking it
@@ -45,6 +48,8 @@ gnome-extensions prefs netident@compilesoftware.nl
 - Panel position (left, center, right)
 - Show/hide live traffic, IP address, country flag, VPN icon
 - Mask IP address
+- Packet loss highlight, public IP and VPN change notifications
+- Interface for the traffic graph
 - Latency probe host
 - Refresh interval (1 min to 1 hour)
 
