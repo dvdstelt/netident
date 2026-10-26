@@ -136,6 +136,25 @@ function _parseProcNetDev(text, iface) {
 }
 
 /**
+ * List the network interfaces known to the kernel, without loopback.
+ *
+ * @returns {string[]}
+ */
+export function listInterfaces() {
+    try {
+        const [, contents] = GLib.file_get_contents('/proc/net/dev');
+        return new TextDecoder().decode(contents).split('\n')
+            .filter(line => line.includes(':'))
+            .map(line => line.split(':')[0].trim())
+            .filter(name => name && name !== 'lo')
+            .sort();
+    } catch (e) {
+        console.error(`NetIdent: could not list interfaces: ${e}`);
+        return [];
+    }
+}
+
+/**
  * Format a rate in bytes per second as a value/unit pair.
  *
  * @param {number} bytesPerSecond
