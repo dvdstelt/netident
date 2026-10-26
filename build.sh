@@ -73,3 +73,4 @@ make zip
 
 VERSION_NAME=$(python3 -c "import json; print(json.load(open('$METADATA'))['version-name'])")
 echo "Built dist/netident@compilesoftware.nl.zip for version $VERSION_NAME"
+echo "Upload it at https://extensions.gnome.org/upload/"
