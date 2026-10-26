@@ -164,3 +164,118 @@ function _gatherRoutingInfo(client) {
 
     return {mode, defaultRouteInterface, vpnHasDefaultRoute, vpnRoutes};
 }
+
+/**
+ * Describe the device that carries the primary connection: what kind of
+ * link it is, its interface, link speed, Wi-Fi network and gateway.
+ *
+ * When the primary connection is a VPN, the physical device underneath it
+ * is described instead, so the header always shows the real link.
+ *
+ * @param {NM.Client} client
+ * @returns {object|null}
+ */
+export function getPrimaryDeviceInfo(client) {
+    if (!client)
+        return null;
+
+    const primary = client.get_primary_connection();
+    let device = _firstDevice(primary);
+
+    if (!device || _isTunnelDevice(device)) {
+        const physical = (client.get_active_connections() || []).find(conn =>
+            conn.state === NM.ActiveConnectionState.ACTIVATED &&
+            !_isVpnType(conn.get_connection_type()) &&
+            _firstDevice(conn) && !_isTunnelDevice(_firstDevice(conn)));
+        device = _firstDevice(physical) || device;
+    }
+
+    if (!device)
+        return null;
+
+    const info = {
+        iface: device.get_iface(),
+        connectionId: primary?.get_id() || null,
+        kind: 'other',
+        title: primary?.get_id() || device.get_iface(),
+        iconName: 'network-wired-symbolic',
+        linkSpeedMbps: null,
+        ssid: null,
+        gateway: _gatewayOf(primary) || _gatewayOf(device) || null,
+        connectivity: _connectivityName(client.get_connectivity()),
+    };
+
+    switch (device.get_device_type()) {
+    case NM.DeviceType.ETHERNET:
+        info.kind = 'wired';
+        info.title = 'Wired connection';
+        info.iconName = 'network-wired-symbolic';
+        info.linkSpeedMbps = device.get_speed?.() || null;
+        break;
+    case NM.DeviceType.WIFI: {
+        info.kind = 'wifi';
+        info.title = 'Wi-Fi';
+        info.iconName = 'network-wireless-symbolic';
+        const ap = device.get_active_access_point?.();
+        const ssid = ap?.get_ssid();
+        if (ssid)
+            info.ssid = NM.utils_ssid_to_utf8(ssid.get_data());
+        const bitrate = device.get_bitrate?.() || 0;
+        info.linkSpeedMbps = bitrate ? Math.round(bitrate / 1000) : null;
+        break;
+    }
+    case NM.DeviceType.MODEM:
+        info.kind = 'mobile';
+        info.title = 'Mobile broadband';
+        info.iconName = 'network-cellular-symbolic';
+        break;
+    case NM.DeviceType.BRIDGE:
+    case NM.DeviceType.BOND:
+    case NM.DeviceType.TEAM:
+        info.kind = 'virtual';
+        info.iconName = 'network-wired-symbolic';
+        break;
+    default:
+        break;
+    }
+
+    return info;
+}
+
+function _firstDevice(activeConnection) {
+    const devices = activeConnection?.get_devices() || [];
+    return devices.length > 0 ? devices[0] : null;
+}
+
+function _isVpnType(type) {
+    return type === 'vpn' || type === 'wireguard';
+}
+
+function _isTunnelDevice(device) {
+    const type = device.get_device_type();
+    return type === NM.DeviceType.TUN ||
+        type === NM.DeviceType.WIREGUARD ||
+        type === NM.DeviceType.VPN ||
+        type === NM.DeviceType.IP_TUNNEL;
+}
+
+function _gatewayOf(owner) {
+    return owner?.get_ip4_config()?.get_gateway() ||
+        owner?.get_ip6_config()?.get_gateway() ||
+        null;
+}
+
+function _connectivityName(state) {
+    switch (state) {
+    case NM.ConnectivityState.FULL:
+        return 'online';
+    case NM.ConnectivityState.LIMITED:
+        return 'limited';
+    case NM.ConnectivityState.PORTAL:
+        return 'portal';
+    case NM.ConnectivityState.NONE:
+        return 'offline';
+    default:
+        return 'unknown';
+    }
+}
