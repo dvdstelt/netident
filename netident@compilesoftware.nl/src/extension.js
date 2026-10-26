@@ -357,6 +357,24 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._ipItem.connect('activate', () => this._copyPublicIp());
         this.menu.addMenuItem(this._ipItem);
 
+        // Local IP
+        this._localIpItem = new PopupMenu.PopupBaseMenuItem({style_class: 'netident-ip-row'});
+        const localColumn = vbox({x_expand: true, y_align: Clutter.ActorAlign.CENTER});
+        this._localIpHeading = label(_('Local IP').toUpperCase(), 'netident-section-label');
+        this._localIpValue = label('\u2013', 'netident-ip');
+        this._localIpDetail = label('', 'netident-caption');
+        localColumn.add_child(this._localIpHeading);
+        localColumn.add_child(this._localIpValue);
+        localColumn.add_child(this._localIpDetail);
+        this._localIpItem.add_child(localColumn);
+        this._localIpItem.add_child(new St.Icon({
+            icon_name: 'edit-copy-symbolic',
+            style_class: 'popup-menu-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._localIpItem.connect('activate', () => this._copyLocalIp());
+        this.menu.addMenuItem(this._localIpItem);
+
         // Expandable detail rows
         this._routeItem = this._buildExpander(_('Internet route'));
         this.menu.addMenuItem(this._routeItem);
@@ -584,6 +602,20 @@ class NetIdentIndicator extends PanelMenu.Button {
             this._ipValue.text = _('Unavailable');
             this._ipDetail.text = ipError || '';
             this._ipItem.setSensitive(false);
+        }
+
+        const localIp = device?.localIp;
+        if (localIp) {
+            const family = localIp.includes(':') ? 'IPv6' : 'IPv4';
+            this._localIpHeading.text = _('Local %s').format(family).toUpperCase();
+            this._localIpValue.text = localIp;
+            this._localIpDetail.text = [device.iface, device.connectionId].filter(Boolean).join(DOT);
+            this._localIpItem.setSensitive(true);
+        } else {
+            this._localIpHeading.text = _('Local IP').toUpperCase();
+            this._localIpValue.text = _('Unavailable');
+            this._localIpDetail.text = '';
+            this._localIpItem.setSensitive(false);
         }
 
         this._updateRouteItem(connInfo, tailscale);
@@ -880,6 +912,14 @@ class NetIdentIndicator extends PanelMenu.Button {
             return;
         St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, ip);
         this._showFooter(_('Public IP copied to clipboard'), FOOTER_MESSAGE_SECONDS);
+    }
+
+    _copyLocalIp() {
+        const ip = this._device?.localIp;
+        if (!ip)
+            return;
+        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, ip);
+        this._showFooter(_('Local IP copied to clipboard'), FOOTER_MESSAGE_SECONDS);
     }
 
     async _onSpeedTestClicked() {

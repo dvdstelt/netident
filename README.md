@@ -15,6 +15,7 @@ A GNOME Shell extension that shows your external IP address and network identity
 - Live traffic graph for the last 60 seconds with session totals
 - Internet latency, jitter and packet loss (ping probe, 1.1.1.1 by default) and gateway latency
 - Public IP with ISP and location, click to copy
+- Local IP of the active interface, click to copy
 - Internet route: VPN status, routing mode, gateway, DNS servers and leak detection, system proxy
 - Tailscale: on/off toggle, hostname, Tailscale IP, DNS name, tailnet, exit node, MagicDNS, peers
 - Connection details: every active connection with IPv4/IPv6, DNS, DHCP/static

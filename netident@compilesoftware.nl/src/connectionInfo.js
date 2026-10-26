@@ -202,6 +202,7 @@ export function getPrimaryDeviceInfo(client) {
         linkSpeedMbps: null,
         ssid: null,
         gateway: _gatewayOf(primary) || _gatewayOf(device) || null,
+        localIp: _firstAddress(device.get_ip4_config()) || _firstAddress(device.get_ip6_config()) || null,
         connectivity: _connectivityName(client.get_connectivity()),
     };
 
@@ -257,6 +258,11 @@ function _isTunnelDevice(device) {
         type === NM.DeviceType.WIREGUARD ||
         type === NM.DeviceType.VPN ||
         type === NM.DeviceType.IP_TUNNEL;
+}
+
+function _firstAddress(ipConfig) {
+    const addresses = ipConfig?.get_addresses() || [];
+    return addresses.length > 0 ? addresses[0].get_address() : null;
 }
 
 function _gatewayOf(owner) {
