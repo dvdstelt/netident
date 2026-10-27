@@ -1025,8 +1025,12 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._offlineItem.menu.removeAll();
 
         const running = tailscale?.available && tailscale.running;
+        // setToggleState emits 'toggled' like a click would, so block the
+        // handler while syncing or every refresh would run tailscale up.
         this._tailscaleToggle.visible = !!tailscale?.available;
+        this._syncingToggle = true;
         this._tailscaleToggle.setToggleState(!!running);
+        this._syncingToggle = false;
         this._tailscaleToggle.setStatus(null);
         this._peersEmpty.visible = !running;
         this._peersEmpty.label.text = tailscale?.available
@@ -1531,6 +1535,9 @@ class NetIdentIndicator extends PanelMenu.Button {
     }
 
     async _onTailscaleToggled(toggle, up) {
+        if (this._syncingToggle || up === !!this._tailscale?.running)
+            return;
+
         toggle.setStatus(up ? _('starting…') : _('stopping…'));
 
         const result = await setTailscaleState(up);
