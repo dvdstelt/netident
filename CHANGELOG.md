@@ -2,7 +2,7 @@
 
 All notable changes to NetIdent are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] - 2026-10-26
+## [1.1.0] - 2026-10-27
 
 ### Added
 
@@ -16,8 +16,7 @@ All notable changes to NetIdent are documented in this file. The format follows 
 - Internet latency, jitter and packet loss from a ping probe, plus gateway latency. The probe host is configurable.
 - Local IP of the active interface, with the interface and connection name. Click to copy.
 - Speed test button. Uses the Ookla speedtest CLI, speedtest-cli or a built-in test against Cloudflare with curl.
-- Tailscale on/off toggle in the popup.
-- Tailscale DNS name in the Tailscale details.
+- Tailscale on/off switch and the MagicDNS name of this device on the Tailscale devices page.
 - Live download and upload rates in the top bar, with a setting to hide them.
 - Light stylesheet. GNOME Shell 50 and later switch between the dark and light variants with the system color scheme.
 - Support for GNOME Shell 51.
