@@ -5,7 +5,7 @@
   "gettext-domain": "netident",
   "settings-schema": "org.gnome.shell.extensions.netident",
   "version": 6,
-  "version-name": "1.2.0",
+  "version-name": "1.2.1",
   "shell-version": [
     "45",
     "46",

@@ -2,7 +2,16 @@
 
 All notable changes to NetIdent are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-10-29
+
+### Fixed
+
+- The interface picker no longer reads /proc/net/dev synchronously in shell code. It lists the devices known to NetworkManager instead.
+- All widget signals are disconnected when the extension is disabled.
+
 ## [1.2.0] - 2026-10-29
+
+Uploaded to extensions.gnome.org and superseded by 1.2.1 before review.
 
 ### Added
 
@@ -40,7 +49,7 @@ All notable changes to NetIdent are documented in this file. The format follows 
 
 ## [1.1.0] - 2026-10-27
 
-Uploaded to extensions.gnome.org and superseded by 1.2.0 before review. All changes are listed under 1.2.0.
+Uploaded to extensions.gnome.org and superseded by 1.2.0 before review.
 
 ## [1.0.0] - 2026-04-16
 
