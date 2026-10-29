@@ -21,7 +21,7 @@ import {
     setAcceptRoutes, setExitNode, setTailscaleState,
 } from './tailscale.js';
 import {getProxySettings} from './proxyInfo.js';
-import {TrafficMonitor, formatBytes, formatRate, formatRatePair, listInterfaces} from './traffic.js';
+import {TrafficMonitor, formatBytes, formatRate, formatRatePair} from './traffic.js';
 import {pingHost} from './probe.js';
 import {runSpeedTest} from './speedtest.js';
 import {getDeviceName} from './hostInfo.js';
@@ -238,12 +238,12 @@ class NetIdentIndicator extends PanelMenu.Button {
             'changed::traffic-interface', () => this._applyTrafficInterface(),
             this);
 
-        this.menu.connect('open-state-changed', (_menu, open) => {
+        this.menu.connectObject('open-state-changed', (_menu, open) => {
             if (open)
                 this._onMenuOpened();
             else
                 this._onMenuClosed();
-        });
+        }, this);
     }
 
     // --- Panel -----------------------------------------------------------
@@ -400,7 +400,7 @@ class NetIdentIndicator extends PanelMenu.Button {
             can_focus: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._ifaceButton.connect('clicked', () => this._cycleTrafficInterface());
+        this._ifaceButton.connectObject('clicked', () => this._cycleTrafficInterface(), this);
         trafficHeading.add_child(this._ifaceButton);
         trafficHeading.add_child(label(`${DOT}${_('Last 60 seconds')}`, 'netident-caption'));
         box.add_child(trafficHeading);
@@ -417,7 +417,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         card.add_child(statsRow);
 
         this._graph = new St.DrawingArea({style_class: 'netident-graph', x_expand: true});
-        this._graph.connect('repaint', area => this._drawGraph(area));
+        this._graph.connectObject('repaint', area => this._drawGraph(area), this);
         card.add_child(this._graph);
 
         const totals = hbox({style_class: 'netident-totals'});
@@ -484,20 +484,20 @@ class NetIdentIndicator extends PanelMenu.Button {
             can_focus: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this._speedButton.connect('clicked', () => this._onSpeedTestClicked());
+        this._speedButton.connectObject('clicked', () => this._onSpeedTestClicked(), this);
         buttons.add_child(this._speedButton);
         buttons.add_child(spacer());
 
-        const refreshButton = this._buildIconButton('view-refresh-symbolic', _('Refresh'));
-        refreshButton.connect('clicked', () => this._refresh(true));
-        buttons.add_child(refreshButton);
+        this._refreshButton = this._buildIconButton('view-refresh-symbolic', _('Refresh'));
+        this._refreshButton.connectObject('clicked', () => this._refresh(true), this);
+        buttons.add_child(this._refreshButton);
 
-        const settingsButton = this._buildIconButton('emblem-system-symbolic', _('Settings'));
-        settingsButton.connect('clicked', () => {
+        this._settingsButton = this._buildIconButton('emblem-system-symbolic', _('Settings'));
+        this._settingsButton.connectObject('clicked', () => {
             this._extension.openPreferences();
             this.menu.close();
-        });
-        buttons.add_child(settingsButton);
+        }, this);
+        buttons.add_child(this._settingsButton);
         box.add_child(buttons);
 
         this._footer = label('', 'netident-footer', {visible: false});
@@ -549,14 +549,15 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._selfDns = label('', 'netident-caption');
         selfColumn.add_child(this._selfDns);
         card.add_child(selfColumn);
-        const selfCopy = this._buildIconButton('edit-copy-symbolic', _('Copy Tailscale IP'));
-        selfCopy.connect('clicked', () => this._copyText(this._tailscale?.tailscaleIp, _('Tailscale IP copied to clipboard')));
-        card.add_child(selfCopy);
+        this._selfCopyButton = this._buildIconButton('edit-copy-symbolic', _('Copy Tailscale IP'));
+        this._selfCopyButton.connectObject('clicked',
+            () => this._copyText(this._tailscale?.tailscaleIp, _('Tailscale IP copied to clipboard')), this);
+        card.add_child(this._selfCopyButton);
         box.add_child(cardWrap);
 
         this._tailscaleToggle = new PopupMenu.PopupSwitchMenuItem(_('Tailscale enabled'), false);
-        this._tailscaleToggle.connect('toggled',
-            (_item, state) => this._onTailscaleToggled(this._tailscaleToggle, state));
+        this._tailscaleToggle.connectObject('toggled',
+            (_item, state) => this._onTailscaleToggled(this._tailscaleToggle, state), this);
         page.addMenuItem(this._tailscaleToggle);
 
         // Online peers
@@ -589,18 +590,18 @@ class NetIdentIndicator extends PanelMenu.Button {
         const adminContent = hbox({y_align: Clutter.ActorAlign.CENTER});
         adminContent.add_child(label(_('Admin console'), null));
         adminContent.add_child(icon('go-next-symbolic', null));
-        const adminButton = new St.Button({
+        this._adminButton = new St.Button({
             style_class: 'netident-link-button',
             child: adminContent,
             reactive: true,
             can_focus: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        adminButton.connect('clicked', () => {
+        this._adminButton.connectObject('clicked', () => {
             openUri(ADMIN_CONSOLE_URL);
             this.menu.close();
-        });
-        buttons.add_child(adminButton);
+        }, this);
+        buttons.add_child(this._adminButton);
         buttons.add_child(spacer());
         this._peersUpdated = label('', 'netident-caption');
         buttons.add_child(this._peersUpdated);
@@ -1105,7 +1106,7 @@ class NetIdentIndicator extends PanelMenu.Button {
                 can_focus: true,
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            tag.connect('clicked', () => this._onExitNodeClicked(peer, tag));
+            tag.connectObject('clicked', () => this._onExitNodeClicked(peer, tag), this);
             nameRow.add_child(tag);
         }
         column.add_child(nameRow);
@@ -1118,7 +1119,7 @@ class NetIdentIndicator extends PanelMenu.Button {
         row.add_child(row.latency);
 
         const copy = this._buildIconButton('edit-copy-symbolic', _('Copy Tailscale IP'));
-        copy.connect('clicked', () => row.activate(null));
+        copy.connectObject('clicked', () => row.activate(null), this);
         row.add_child(copy);
         return row;
     }
@@ -1209,8 +1210,16 @@ class NetIdentIndicator extends PanelMenu.Button {
             this._ifaceButton.label = `${iface} (${_('auto')}) ▾`;
     }
 
+    _listInterfaces() {
+        const devices = this._nm.client?.get_devices() || [];
+        return devices
+            .map(device => device.get_iface())
+            .filter(iface => iface && iface !== 'lo')
+            .sort();
+    }
+
     _cycleTrafficInterface() {
-        const options = ['', ...listInterfaces()];
+        const options = ['', ...this._listInterfaces()];
         const current = this._settings.get_string('traffic-interface');
         const index = options.indexOf(current);
         const next = options[(index + 1) % options.length];
@@ -1603,6 +1612,19 @@ class NetIdentIndicator extends PanelMenu.Button {
         this._nm = null;
         this._settings.disconnectObject(this);
         this._settings = null;
+
+        // Widgets are destroyed with the indicator, but disconnect anyway so
+        // no handler can run against a disabled extension.
+        this.menu.disconnectObject(this);
+        for (const actor of [
+            this._ifaceButton, this._graph, this._speedButton, this._refreshButton,
+            this._settingsButton, this._selfCopyButton, this._tailscaleToggle,
+            this._adminButton,
+        ])
+            actor.disconnectObject(this);
+        for (const row of this._onlineSection._getMenuItems())
+            row.destroy();
+        this._offlineItem.menu.removeAll();
 
         for (const child of this._panelChildren())
             child.destroy();
