@@ -4,8 +4,8 @@
   "uuid": "netident@compilesoftware.nl",
   "gettext-domain": "netident",
   "settings-schema": "org.gnome.shell.extensions.netident",
-  "version": 5,
-  "version-name": "1.1.0",
+  "version": 6,
+  "version-name": "1.2.0",
   "shell-version": [
     "45",
     "46",

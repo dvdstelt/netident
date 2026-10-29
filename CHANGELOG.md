@@ -2,7 +2,7 @@
 
 All notable changes to NetIdent are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] - 2026-10-27
+## [1.2.0] - 2026-10-29
 
 ### Added
 
@@ -37,6 +37,10 @@ All notable changes to NetIdent are documented in this file. The format follows 
 ### Removed
 
 - The `make release` target. Use `./build.sh major`, `minor` or `patch` instead.
+
+## [1.1.0] - 2026-10-27
+
+Uploaded to extensions.gnome.org and superseded by 1.2.0 before review. All changes are listed under 1.2.0.
 
 ## [1.0.0] - 2026-04-16
 
