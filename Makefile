@@ -6,6 +6,12 @@ DIST = dist
 INSTALLBASE = $(HOME)/.local/share/gnome-shell/extensions
 INSTALLDIR = $(INSTALLBASE)/$(UUID)
 
+# Integer version stamped on local installs. extensions.gnome.org tells
+# GNOME Shell to replace a local install whose integer matches an unreviewed
+# or rejected upload with the published build, so a development install
+# must carry a number the site will never assign.
+DEV_VERSION = 999
+
 all: schemas
 
 clean:
@@ -20,13 +26,13 @@ $(SRC)/schemas/gschemas.compiled: $(SRC)/schemas/org.gnome.shell.extensions.neti
 install: schemas
 	rm -rf $(INSTALLDIR)
 	mkdir -p $(INSTALLDIR)/schemas $(INSTALLDIR)/icons
-	cp $(SRC)/metadata.json $(INSTALLDIR)/
+	sed 's/"version": [0-9]*,/"version": $(DEV_VERSION),/' $(SRC)/metadata.json > $(INSTALLDIR)/metadata.json
 	cp $(SRC)/*.js $(INSTALLDIR)/
 	cp $(SRC)/stylesheet-dark.css $(SRC)/stylesheet-light.css $(INSTALLDIR)/
 	cp $(SRC)/stylesheet-dark.css $(INSTALLDIR)/stylesheet.css
 	cp $(SRC)/schemas/*.xml $(SRC)/schemas/gschemas.compiled $(INSTALLDIR)/schemas/
 	cp -r $(SRC)/icons/* $(INSTALLDIR)/icons/
-	@echo "Installed to $(INSTALLDIR)"
+	@echo "Installed to $(INSTALLDIR) as development version $(DEV_VERSION)"
 	@echo "Run 'make enable' to enable, then log out and back in to reload GNOME Shell"
 
 enable:

@@ -59,6 +59,8 @@ On Wayland, you must log out and back in for GNOME Shell to load new extension c
 
 ## Development workflow
 
+`make install` stamps the installed copy with version 999. extensions.gnome.org tells GNOME Shell to replace a local install whose integer matches an unreviewed or rejected upload with the published build, and 999 is a number the site never assigns. The zip from `build.sh` keeps the real number.
+
 1. Edit files in `src/`
 2. Run `make install`
 3. Log out and back in
