@@ -1,5 +1,6 @@
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
@@ -26,6 +27,10 @@ export default class NetIdentPrefs extends ExtensionPreferences {
         generalPage.add(panelGroup);
 
         panelGroup.add(this._makeSwitchRow(
+            _('Show Live Traffic'), _('Display download and upload rates'),
+            settings, 'show-traffic-in-panel'));
+
+        panelGroup.add(this._makeSwitchRow(
             _('Show IP Address'), _('Display external IP in the top bar'),
             settings, 'show-ip-in-panel'));
 
@@ -34,12 +39,57 @@ export default class NetIdentPrefs extends ExtensionPreferences {
             settings, 'show-flag-in-panel'));
 
         panelGroup.add(this._makeSwitchRow(
-            _('Show VPN Icon'), _('Display VPN status icon'),
+            _('Show VPN Icon'), _('Display VPN or Tailscale status icon'),
             settings, 'show-vpn-icon-in-panel'));
 
         panelGroup.add(this._makeSwitchRow(
             _('Mask IP Address'), _('Replace last segments with asterisks'),
             settings, 'mask-ip'));
+
+        panelGroup.add(this._makeSwitchRow(
+            _('Highlight Packet Loss'), _('Color the indicator when the latency probe loses packets'),
+            settings, 'alert-on-packet-loss'));
+
+        // Notifications group
+        const notifyGroup = new Adw.PreferencesGroup({
+            title: _('Notifications'),
+        });
+        generalPage.add(notifyGroup);
+
+        notifyGroup.add(this._makeSwitchRow(
+            _('Public IP Changed'), _('Notify when the public IP address changes'),
+            settings, 'notify-ip-change'));
+
+        notifyGroup.add(this._makeSwitchRow(
+            _('VPN Connected or Disconnected'), _('Notify when a VPN connection comes up or goes down'),
+            settings, 'notify-vpn-change'));
+
+        // Traffic group
+        const trafficGroup = new Adw.PreferencesGroup({
+            title: _('Live Traffic'),
+        });
+        generalPage.add(trafficGroup);
+
+        const interfaces = this._listInterfaces();
+        const current = settings.get_string('traffic-interface');
+        if (current && !interfaces.includes(current))
+            interfaces.push(current);
+
+        const ifaceRow = new Adw.ComboRow({
+            title: _('Interface'),
+            subtitle: _('Interface measured by the traffic graph'),
+        });
+        const ifaceModel = new Gtk.StringList();
+        ifaceModel.append(_('Automatic (primary connection)'));
+        for (const iface of interfaces)
+            ifaceModel.append(iface);
+        ifaceRow.set_model(ifaceModel);
+        ifaceRow.set_selected(current ? interfaces.indexOf(current) + 1 : 0);
+        ifaceRow.connect('notify::selected', () => {
+            const index = ifaceRow.get_selected();
+            settings.set_string('traffic-interface', index === 0 ? '' : interfaces[index - 1]);
+        });
+        trafficGroup.add(ifaceRow);
 
         // Position group
         const positionGroup = new Adw.PreferencesGroup({
@@ -85,6 +135,17 @@ export default class NetIdentPrefs extends ExtensionPreferences {
         });
         generalPage.add(refreshGroup);
 
+        const probeRow = new Adw.EntryRow({
+            title: _('Latency Probe Host'),
+            text: settings.get_string('probe-host'),
+        });
+        probeRow.connect('changed', () => {
+            const host = probeRow.get_text().trim();
+            if (host)
+                settings.set_string('probe-host', host);
+        });
+        refreshGroup.add(probeRow);
+
         const refreshRow = new Adw.SpinRow({
             title: _('Refresh Interval'),
             subtitle: _('How often to check external IP (seconds)'),
@@ -97,6 +158,19 @@ export default class NetIdentPrefs extends ExtensionPreferences {
         });
         settings.bind('refresh-interval', refreshRow.get_adjustment(), 'value', Gio.SettingsBindFlags.DEFAULT);
         refreshGroup.add(refreshRow);
+    }
+
+    _listInterfaces() {
+        try {
+            const [, contents] = GLib.file_get_contents('/proc/net/dev');
+            return new TextDecoder().decode(contents).split('\n')
+                .map(line => line.split(':')[0].trim())
+                .filter(name => name && name !== 'lo' && !name.startsWith('Inter') && !name.startsWith('face'))
+                .sort();
+        } catch (e) {
+            console.error(`NetIdent: could not list interfaces: ${e}`);
+            return [];
+        }
     }
 
     _makeSwitchRow(title, subtitle, settings, key) {

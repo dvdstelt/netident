@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+    <enum id="org.gnome.shell.extensions.netident.position">
+        <value value="0" nick="left"/>
+        <value value="1" nick="center"/>
+        <value value="2" nick="right"/>
+    </enum>
+    <schema path="/org/gnome/shell/extensions/netident/" id="org.gnome.shell.extensions.netident">
+        <key name="position-in-panel" enum="org.gnome.shell.extensions.netident.position">
+            <default>'right'</default>
+            <summary>Position in panel</summary>
+        </key>
+        <key type="i" name="position-in-panel-offset">
+            <default>0</default>
+            <summary>Position offset within the chosen panel box</summary>
+        </key>
+        <key type="i" name="refresh-interval">
+            <default>300</default>
+            <summary>External IP refresh interval in seconds</summary>
+            <range min="60" max="3600"/>
+        </key>
+        <key type="b" name="show-traffic-in-panel">
+            <default>true</default>
+            <summary>Show live download and upload rates in the top bar</summary>
+        </key>
+        <key type="b" name="show-ip-in-panel">
+            <default>false</default>
+            <summary>Show external IP address in the top bar</summary>
+        </key>
+        <key type="b" name="show-flag-in-panel">
+            <default>true</default>
+            <summary>Show country flag in the top bar</summary>
+        </key>
+        <key type="b" name="show-vpn-icon-in-panel">
+            <default>true</default>
+            <summary>Show VPN status icon in the top bar</summary>
+        </key>
+        <key type="s" name="probe-host">
+            <default>'1.1.1.1'</default>
+            <summary>Host used to measure Internet latency, jitter and packet loss</summary>
+        </key>
+        <key type="s" name="traffic-interface">
+            <default>''</default>
+            <summary>Interface measured by the traffic graph; empty means the primary connection</summary>
+        </key>
+        <key type="b" name="notify-ip-change">
+            <default>true</default>
+            <summary>Send a notification when the public IP address changes</summary>
+        </key>
+        <key type="b" name="notify-vpn-change">
+            <default>true</default>
+            <summary>Send a notification when a VPN connects or disconnects</summary>
+        </key>
+        <key type="b" name="alert-on-packet-loss">
+            <default>true</default>
+            <summary>Highlight the top bar indicator when the latency probe sees packet loss</summary>
+        </key>
+        <key type="s" name="last-public-ip">
+            <default>''</default>
+            <summary>Last seen public IP address, used to detect changes</summary>
+        </key>
+        <key type="as" name="ip-history">
+            <default>[]</default>
+            <summary>Recent public IP changes as "unix-time|ip|country|org", newest first</summary>
+        </key>
+        <key type="b" name="mask-ip">
+            <default>false</default>
+            <summary>Mask the external IP address</summary>
+        </key>
+    </schema>
+</schemalist>
